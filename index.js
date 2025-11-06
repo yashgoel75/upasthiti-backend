@@ -1,6 +1,7 @@
 import express from "express";
 import { register } from "./instrumentation.js";
-
+import mongoose from "mongoose";
+import dbConnect from "./lib/mongodb.js";
 const app = express();
 
 app.get("/", (req, res) => {
@@ -23,21 +24,15 @@ app.get("/api/admin", async (req, res) => {
 
     // Optional: Authentication check can be added here
 
-    // Dynamically access the collection
-    const mongoose = await import("mongoose");
-    const db = mongoose.connection.db;
 
-    if (!db) {
-      return res.status(500).json({
-        error: "Database not connected"
-      });
+    async function ConnectDB(dbName) {
+      await dbConnect();
+      return mongoose.connection.getClient().db(dbName);
     }
-
     // Query the collection by uid
-    const result = await db
-      .collection("admin")
-      .find({ uid })
-      .toArray();
+    const result = await ConnectDB("upasthiti").then((db) =>
+      db.collection("admin").find({ uid }).toArray()
+    );
 
     res.json({
       success: true,
