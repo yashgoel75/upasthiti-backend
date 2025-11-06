@@ -1,0 +1,106 @@
+import mongoose from "mongoose";
+
+const SubjectSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    code: { type: String, required: true, unique: true },
+    credits: { type: Number, required: true }
+});
+
+const TimeTableSchema = new mongoose.Schema({
+    day: { type: String, required: true },
+    schedule: [
+        {
+            time: String,
+            subjectCode: String,
+            teacherID: String,
+            classRoomID: String
+        }
+    ]
+});
+
+const TeacherSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    phone: { type: Number, required: true },
+    officialEmail: { type: String, required: true },
+    subjects: [SubjectSchema],
+    timetable: [TimeTableSchema]
+});
+
+const ClassSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    branch: String,
+    section: String,
+    classCoordinator: String,
+    batchStart: Number,
+    batchEnd: Number,
+    timetable: [TimeTableSchema]
+});
+
+const Classroom = new mongoose.Schema({
+    id: String,
+    type: String, // Lab or Room
+    block: String, // A, B or C
+    floor: Number,
+    roomNumber: Number,
+})
+
+const StudentSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    enrollmentNo: { type: Number, required: true },
+    parents: [{
+        name: String,
+        relation: String,
+        phoneNumber: Number,
+        email: String,
+    }],
+    phone: { type: Number, required: true },
+    email: { type: String, required: true },
+    branch: { type: String, required: true },
+    section: { type: String, required: true },
+    batchStart: { type: Number, required: true },
+    batchEnd: { type: Number, required: true },
+});
+
+const AttendanceRecordSchema = new mongoose.Schema({
+    date: { type: Date, required: true },
+    status: {
+        type: String,
+        enum: ['Present', 'Absent', 'Leave'],
+        required: true
+    }
+});
+
+const StudentAttendanceSchema = new mongoose.Schema({
+    studentId: { type: String, required: true },
+    studentName: { type: String, required: true },
+    enrollmentNo: { type: Number, required: true },
+    attendanceRecords: [AttendanceRecordSchema]
+});
+
+const SubjectAttendanceSchema = new mongoose.Schema({
+    subjectId: { type: String, required: true },
+    subjectName: { type: String, required: true },
+    subjectCode: { type: String, required: true },
+    students: [StudentAttendanceSchema]
+});
+
+const SemesterAttendanceSchema = new mongoose.Schema({
+    semesterNumber: { type: Number, required: true },
+    subjects: [SubjectAttendanceSchema]
+});
+
+const AttendanceSchema = new mongoose.Schema({
+    classId: { type: String, required: true },
+    branch: { type: String, required: true },
+    section: { type: String, required: true },
+    semesters: [SemesterAttendanceSchema]
+});
+
+export const Subject = mongoose.model("Subject", SubjectSchema);
+export const Teacher = mongoose.model("Teacher", TeacherSchema);
+export const Class = mongoose.model("Class", ClassSchema);
+export const Student = mongoose.model("Student", StudentSchema);
+export const Attendance = mongoose.model("Attendance", AttendanceSchema);
