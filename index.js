@@ -85,6 +85,84 @@ app.get("/api/admin", async (req, res) => {
   }
 });
 
+app.get("/api/counts", async (req, res) => {
+  try {
+    async function ConnectDB(dbName) {
+      await dbConnect();
+      return mongoose.connection.getClient().db(dbName);
+    }
+
+    const db = await ConnectDB("upasthiti");
+
+    // Get all faculty documents
+    const facultyDocs = await db.collection("faculty").find({}).toArray();
+    
+    // Get all student documents
+    const studentDocs = await db.collection("students").find({}).toArray();
+
+    // Segregate faculty by type
+    const facultyByType = {
+      "Assistant Professor": facultyDocs.filter(f => f.type === "Assistant Professor"),
+      "Associate Professor": facultyDocs.filter(f => f.type === "Associate Professor"),
+      "Lab Assistant": facultyDocs.filter(f => f.type === "Lab Assistant"),
+    };
+
+    // Segregate students by branch
+    const studentsByBranch = {};
+    studentDocs.forEach(student => {
+      const branch = student.branch || "Unknown";
+      if (!studentsByBranch[branch]) {
+        studentsByBranch[branch] = [];
+      }
+      studentsByBranch[branch].push(student);
+    });
+
+    // Prepare response with counts and segregated data
+    const response = {
+      success: true,
+      totalCounts: {
+        faculty: facultyDocs.length,
+        students: studentDocs.length,
+      },
+      faculty: {
+        total: facultyDocs.length,
+        byType: {
+          "Assistant Professor": {
+            count: facultyByType["Assistant Professor"].length,
+            data: facultyByType["Assistant Professor"],
+          },
+          "Associate Professor": {
+            count: facultyByType["Associate Professor"].length,
+            data: facultyByType["Associate Professor"],
+          },
+          "Lab Assistant": {
+            count: facultyByType["Lab Assistant"].length,
+            data: facultyByType["Lab Assistant"],
+          },
+        },
+      },
+      students: {
+        total: studentDocs.length,
+        byBranch: Object.keys(studentsByBranch).reduce((acc, branch) => {
+          acc[branch] = {
+            count: studentsByBranch[branch].length,
+            data: studentsByBranch[branch],
+          };
+          return acc;
+        }, {}),
+      },
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Count API error:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
 app.get("/", (req, res) => {
   res.send("Hello, world!");
 });
