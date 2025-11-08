@@ -1,35 +1,72 @@
 import express from "express";
-import { register } from "./instrumentation.js";
+import cors from "cors";
 import mongoose from "mongoose";
+import { register } from "./instrumentation.js";
 import dbConnect from "./lib/mongodb.js";
+import { Admin } from "./db/schema.js";
+
 const app = express();
 
-app.get("/", (req, res) => {
-  res.send("Hello, world!");
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    credentials: true,
+  })
+);
+app.use(express.json());
+
+app.patch("/api/user", async (req, res) => {
+  await register();
+
+  try {
+    const { uid, updates } = req.body;
+
+    if (!uid || !updates) {
+      return res.status(400).json({ error: "Missing uid or updates" });
+    }
+
+    async function ConnectDB(dbName) {
+      await dbConnect();
+      return mongoose.connection.getClient().db(dbName);
+    }
+
+    const result = await ConnectDB("upasthiti").then((db) =>
+      db
+        .collection("admin")
+        .findOneAndUpdate({ uid: uid }, { $set: updates }, { new: true })
+    );
+    console.log(result);
+
+    if (!result) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({ success: true, user: result });
+  } catch (error) {
+    console.error("Error updating user:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
 });
 
-/**
- * Admin API to query documents by uid
- * Example: /api/admin?uid=some-uid
- */
 app.get("/api/admin", async (req, res) => {
   try {
     const { uid } = req.query;
 
     if (!uid) {
       return res.status(400).json({
-        error: "Missing required query parameter: uid"
+        error: "Missing required query parameter: uid",
       });
     }
-
-    // Optional: Authentication check can be added here
-
 
     async function ConnectDB(dbName) {
       await dbConnect();
       return mongoose.connection.getClient().db(dbName);
     }
-    // Query the collection by uid
+
     const result = await ConnectDB("upasthiti").then((db) =>
       db.collection("admin").find({ uid }).toArray()
     );
@@ -37,19 +74,22 @@ app.get("/api/admin", async (req, res) => {
     res.json({
       success: true,
       count: result.length,
-      data: result
+      data: result,
     });
-
   } catch (error) {
     console.error("Admin API error:", error);
     res.status(500).json({
       error: "Internal server error",
-      message: error.message
+      message: error.message,
     });
   }
-})
+});
 
-app.listen(5000, () => {
+app.get("/", (req, res) => {
+  res.send("Hello, world!");
+});
+
+app.listen(8080, () => {
   register();
-  console.log("Server running on http://localhost:5000");
+  console.log("Server running on http://localhost:8080");
 });

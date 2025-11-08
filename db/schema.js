@@ -1,8 +1,9 @@
 import mongoose from "mongoose";
 
 const AdminSchema = new mongoose.Schema({
-  id: String,
+  adminId: String,
   name: String,
+  profilePicture: String,
   officialEmail: String,
   phoneNumber: Number,
   uid: String,
@@ -13,6 +14,8 @@ const SchoolSchema = new mongoose.Schema({
   id: String,
   name: String,
   block: String, // A, B or C
+  dean: String,
+  programmeCoordinator: String,
 });
 
 const SubjectSchema = new mongoose.Schema({
@@ -34,7 +37,7 @@ const TimeTableSchema = new mongoose.Schema({
   ],
 });
 
-const TeacherSchema = new mongoose.Schema({
+const FacultySchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   phone: { type: Number, required: true },
@@ -46,6 +49,9 @@ const TeacherSchema = new mongoose.Schema({
   },
   subjects: [SubjectSchema],
   timetable: [TimeTableSchema],
+  type: {
+    enum: ["Assistant Professor", "Associate Professor", "Lab Assistant"]
+  }
 });
 
 const BranchSchema = new mongoose.Schema({
@@ -55,7 +61,7 @@ const BranchSchema = new mongoose.Schema({
 
 const ClassSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
-  branch: Branch,
+  branch: BranchSchema,
   section: String,
   classCoordinator: String,
   batchStart: Number,
@@ -129,9 +135,9 @@ const AttendanceSchema = new mongoose.Schema({
 
 export const Subject =
   mongoose.models.Subject || mongoose.model("Subject", SubjectSchema);
-export const Teacher =
-  mongoose.models.Teacher || mongoose.model("Teacher", TeacherSchema);
-export const Admin = mongoose.models.Admin || mongoose.model("Admin", Admin);
+export const Faculty =
+  mongoose.models.Faculty || mongoose.model("Faculty", FacultySchema);
+export const Admin = mongoose.models.Admin || mongoose.model("Admin", AdminSchema);
 export const School =
   mongoose.models.School || mongoose.model("School", SchoolSchema);
 export const Class =
