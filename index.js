@@ -127,15 +127,15 @@ app.get("/api/counts", async (req, res) => {
       faculty: {
         total: facultyDocs.length,
         byType: {
-          "Assistant Professor": {
+          "AssistantProfessor": {
             count: facultyByType["Assistant Professor"].length,
             data: facultyByType["Assistant Professor"],
           },
-          "Associate Professor": {
+          "AssociateProfessor": {
             count: facultyByType["Associate Professor"].length,
             data: facultyByType["Associate Professor"],
           },
-          "Lab Assistant": {
+          "LabAssistant": {
             count: facultyByType["Lab Assistant"].length,
             data: facultyByType["Lab Assistant"],
           },
