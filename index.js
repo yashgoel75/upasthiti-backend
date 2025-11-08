@@ -85,6 +85,72 @@ app.get("/api/admin", async (req, res) => {
   }
 });
 
+app.get("/api/faculty", async (req, res) => {
+  try {
+    const { uid } = req.query;
+
+    if (!uid) {
+      return res.status(400).json({
+        error: "Missing required query parameter: uid",
+      });
+    }
+
+    async function ConnectDB(dbName) {
+      await dbConnect();
+      return mongoose.connection.getClient().db(dbName);
+    }
+
+    const result = await ConnectDB("upasthiti").then((db) =>
+      db.collection("faculty").find({ uid }).toArray()
+    );
+
+    res.json({
+      success: true,
+      count: result.length,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Admin API error:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
+app.get("/api/student", async (req, res) => {
+  try {
+    const { uid } = req.query;
+
+    if (!uid) {
+      return res.status(400).json({
+        error: "Missing required query parameter: uid",
+      });
+    }
+
+    async function ConnectDB(dbName) {
+      await dbConnect();
+      return mongoose.connection.getClient().db(dbName);
+    }
+
+    const result = await ConnectDB("upasthiti").then((db) =>
+      db.collection("students").find({ uid }).toArray()
+    );
+
+    res.json({
+      success: true,
+      count: result.length,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Admin API error:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
 app.get("/api/counts", async (req, res) => {
   try {
     async function ConnectDB(dbName) {
