@@ -6,17 +6,23 @@ import facultiesRouter from "./routes/faculties.routes.js";
 import studentsRouter from "./routes/students.routes.js";
 
 const app = express();
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://upasthiti-admin-frontend.vercel.app",
+];
 
 app.use(
-    cors({
-        origin: "http://localhost:3000",
-        methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-        credentials: true,
-    }, {
-        origin: "https://upasthiti-admin-frontend.vercel.app",
-        methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-        credentials: true,
-    })
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    credentials: true,
+  })
 );
 
 app.use(express.json());
@@ -25,12 +31,12 @@ app.use("/api/admin", adminRouter);
 
 app.use("/api/faculty", facultiesRouter);
 
-app.use("/api/student", studentsRouter)
+app.use("/api/student", studentsRouter);
 
-app.use("/api", utilRouter)
+app.use("/api", utilRouter);
 
 app.get("/", (req, res) => {
-    res.send("Hello, world!");
+  res.send("Hello, world!");
 });
 
 export { app };
