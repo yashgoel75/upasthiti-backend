@@ -43,10 +43,6 @@ const FacultySchema = new mongoose.Schema({
   phone: { type: Number, required: true },
   officialEmail: { type: String, required: true },
   uid: String,
-  role: {
-    classCoordinator: { classId: String },
-    branchCoordinator: { branchId: String },
-  },
   subjects: [SubjectSchema],
   timetable: [TimeTableSchema],
   type: {
