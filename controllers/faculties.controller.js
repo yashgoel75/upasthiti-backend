@@ -13,8 +13,7 @@ const getFaculty = async (req, res) => {
             });
         }
 
-        const result = await db.collection("faculty").find({ uid }).toArray()
-
+        const result = await db.collection("faculty").find({ uid }).toArray();
 
         res.json({
             success: true,
@@ -28,6 +27,24 @@ const getFaculty = async (req, res) => {
             message: error.message,
         });
     }
-}
+};
 
-export { getFaculty }
+const getFaculties = async (req, res) => {
+    try {
+        const result = await db.collection("faculty").find({}).toArray();
+
+        res.json({
+            success: true,
+            count: result.length,
+            data: result,
+        });
+    } catch (error) {
+        console.error("Faculty API error:", error);
+        res.status(500).json({
+            error: "Internal server error",
+            message: error.message,
+        });
+    }
+};
+
+export { getFaculty, getFaculties };

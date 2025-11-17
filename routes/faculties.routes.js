@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { getFaculty } from "../controllers/faculties.controller.js";
+import { getFaculties, getFaculty } from "../controllers/faculties.controller.js";
 
 const router = Router();
 
-router.route("/").get(getFaculty);
+router.get("/", getFaculties);
+router.get("/single", getFaculty);
 
 export default router;
