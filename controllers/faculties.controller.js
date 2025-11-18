@@ -13,7 +13,7 @@ const getFaculty = async (req, res) => {
             });
         }
 
-        const result = await db.collection("faculty").find({ uid }).toArray();
+        const result = await db.collection("faculties").find({ uid }).toArray();
 
         res.json({
             success: true,
@@ -31,7 +31,14 @@ const getFaculty = async (req, res) => {
 
 const getFaculties = async (req, res) => {
     try {
-        const result = await db.collection("faculty").find({}).toArray();
+        const result = await db.collection("faculties").find(
+            {},
+            {
+                projection: {
+                    name: 1, email: 1, schoolId: 1, type: 1, _id: 0
+                }
+            }
+        ).toArray();
 
         res.json({
             success: true,
