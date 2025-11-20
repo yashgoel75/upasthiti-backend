@@ -37,17 +37,23 @@ const TimeTableSchema = new mongoose.Schema({
   ],
 });
 
+const DepartmentSchema = new mongoose.Schema({
+  id: { tpe: String, required: true },
+  name: { type: String, required: true },
+});
 const FacultySchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
+  facultyId: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   phone: { type: Number, required: true },
   officialEmail: { type: String, required: true },
+  schoolId: { type: String, required: true },
   uid: String,
+  departmentId: String,
   subjects: [SubjectSchema],
   timetable: [TimeTableSchema],
   type: {
-    enum: ["Assistant Professor", "Associate Professor", "Lab Assistant"]
-  }
+    enum: ["Assistant Professor", "Associate Professor", "Lab Assistant"],
+  },
 });
 
 const BranchSchema = new mongoose.Schema({
@@ -133,12 +139,15 @@ export const Subject =
   mongoose.models.Subject || mongoose.model("Subject", SubjectSchema);
 export const Faculty =
   mongoose.models.Faculty || mongoose.model("Faculty", FacultySchema);
-export const Admin = mongoose.models.Admin || mongoose.model("Admin", AdminSchema);
+export const Admin =
+  mongoose.models.Admin || mongoose.model("Admin", AdminSchema);
 export const School =
   mongoose.models.School || mongoose.model("School", SchoolSchema);
 export const Class =
   mongoose.models.Class || mongoose.model("Class", ClassSchema);
 export const Student =
   mongoose.models.Student || mongoose.model("Student", StudentSchema);
+export const Department =
+  mongoose.models.Department || mongoose.model("Department", DepartmentSchema);
 export const Attendance =
   mongoose.models.Attendance || mongoose.model("Attendance", AttendanceSchema);

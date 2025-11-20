@@ -1,8 +1,8 @@
 import { DB_NAME } from "../constant.js";
 import getDB from "../db/index.js";
-import csv from 'csv-parser';
-import { Readable } from 'stream';
-import admin from "../utils/firebase-admin.js"
+import csv from "csv-parser";
+import { Readable } from "stream";
+import admin from "../utils/firebase-admin.js";
 
 const db = await getDB(DB_NAME);
 
@@ -30,8 +30,8 @@ const getAdminInfo = async (req, res) => {
             ...admin,
             school: school
               ? {
-                name: school.name,
-              }
+                  name: school.name,
+                }
               : null,
           };
         }
@@ -87,14 +87,14 @@ const updateProfile = async (req, res) => {
   }
 };
 
-
 const addFaculties = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No CSV file uploaded" });
     }
     const password = process.env.FACULTY_PASSWORD;
-    if (!password) return res.status(500).json({ error: "FACULTY_PASSWORD not set" });
+    if (!password)
+      return res.status(500).json({ error: "FACULTY_PASSWORD not set" });
 
     const results = [];
     const errors = [];
@@ -105,9 +105,9 @@ const addFaculties = async (req, res) => {
     await new Promise((resolve, reject) => {
       stream
         .pipe(csv())
-        .on('data', (data) => results.push(data))
-        .on('end', resolve)
-        .on('error', reject);
+        .on("data", (data) => results.push(data))
+        .on("end", resolve)
+        .on("error", reject);
     });
 
     if (results.length === 0) {
@@ -120,13 +120,19 @@ const addFaculties = async (req, res) => {
     for (const [index, raw] of results.entries()) {
       try {
         const record = {};
-        for (const k of Object.keys(raw)) record[k.trim()] = typeof raw[k] === "string" ? raw[k].trim() : raw[k];
+        for (const k of Object.keys(raw))
+          record[k.trim()] =
+            typeof raw[k] === "string" ? raw[k].trim() : raw[k];
 
         // Validate required fields
         const email = record.officialEmail || record.email || null;
         const name = record.name || null;
         if (!email || !name) {
-          errors.push({ row: index + 1, error: "Missing required fields (email/name)", data: raw });
+          errors.push({
+            row: index + 1,
+            error: "Missing required fields (email/name)",
+            data: raw,
+          });
           continue;
         }
         // Create Firebase user
@@ -136,10 +142,10 @@ const addFaculties = async (req, res) => {
             email,
             password,
             displayName: name,
-            emailVerified: false
+            emailVerified: false,
           });
         } catch (e) {
-          if (e.code === 'auth/email-already-exists') {
+          if (e.code === "auth/email-already-exists") {
             // If user exists, get the existing user
             firebaseUser = await admin.auth().getUserByEmail(email);
           } else {
@@ -156,30 +162,33 @@ const addFaculties = async (req, res) => {
           phone: record.phone || null,
           type: record.type,
           updatedAt: new Date(),
-          isActive: true
+          isActive: true,
         };
 
-        const upsertResult = await db.collection("faculties").findOneAndUpdate(
-          { email },
-          { $setOnInsert: { createdAt: new Date() }, $set: facultyDocument },
-          { upsert: true, returnDocument: "after" }
-        );
+        const upsertResult = await db
+          .collection("faculties")
+          .findOneAndUpdate(
+            { email },
+            { $setOnInsert: { createdAt: new Date() }, $set: facultyDocument },
+            { upsert: true, returnDocument: "after" }
+          );
 
         processedFaculties.push({
           uid: firebaseUser.uid,
+          facultyId: record.facultyId,
           email: record.officialEmail,
           password: process.env.FACULTY_PASSWORD,
           name: record.name,
+          departmentId: record.departmentId,
           schoolId: record.schoolId,
           phone: record.phone,
           type: record.type,
         });
-
       } catch (error) {
         errors.push({
           row: index + 1,
           error: error.message,
-          data: raw
+          data: raw,
         });
       }
     }
@@ -190,12 +199,11 @@ const addFaculties = async (req, res) => {
       stats: {
         total: results.length,
         successful: processedFaculties.length,
-        failed: errors.length
+        failed: errors.length,
       },
       data: processedFaculties,
-      errors: errors.length > 0 ? errors : undefined
+      errors: errors.length > 0 ? errors : undefined,
     });
-
   } catch (error) {
     console.error("[Admin API] Error occurred in faculty data adding:", error);
     res.status(500).json({
@@ -211,7 +219,8 @@ const addStudents = async (req, res) => {
       return res.status(400).json({ error: "No CSV file uploaded" });
     }
     const password = process.env.STUDENT_PASSWORD;
-    if (!password) return res.status(500).json({ error: "STUDENT_PASSWORD not set" });
+    if (!password)
+      return res.status(500).json({ error: "STUDENT_PASSWORD not set" });
 
     const results = [];
     const errors = [];
@@ -222,9 +231,9 @@ const addStudents = async (req, res) => {
     await new Promise((resolve, reject) => {
       stream
         .pipe(csv())
-        .on('data', (data) => results.push(data))
-        .on('end', resolve)
-        .on('error', reject);
+        .on("data", (data) => results.push(data))
+        .on("end", resolve)
+        .on("error", reject);
     });
 
     if (results.length === 0) {
@@ -237,12 +246,17 @@ const addStudents = async (req, res) => {
     for (const [index, raw] of results.entries()) {
       try {
         const rec = {};
-        for (const k of Object.keys(raw)) rec[k.trim()] = typeof raw[k] === "string" ? raw[k].trim() : raw[k];
+        for (const k of Object.keys(raw))
+          rec[k.trim()] = typeof raw[k] === "string" ? raw[k].trim() : raw[k];
 
         const email = rec.officialEmail || rec.email || null;
         const name = rec.name || null;
         if (!email || !name) {
-          errors.push({ row: index + 1, error: "Missing required fields (email/name)", data: raw });
+          errors.push({
+            row: index + 1,
+            error: "Missing required fields (email/name)",
+            data: raw,
+          });
           continue;
         }
 
@@ -253,10 +267,10 @@ const addStudents = async (req, res) => {
             email,
             password,
             displayName: name,
-            emailVerified: false
+            emailVerified: false,
           });
         } catch (firebaseError) {
-          if (firebaseError.code === 'auth/email-already-exists') {
+          if (firebaseError.code === "auth/email-already-exists") {
             // If user exists, get the existing user
             firebaseUser = await admin.auth().getUserByEmail(email);
           } else {
@@ -277,15 +291,17 @@ const addStudents = async (req, res) => {
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
           updatedAt: new Date(),
-          isActive: true
+          isActive: true,
         };
 
         // Insert into MongoDB
-        const upsertResult = await db.collection("students").findOneAndUpdate(
-          { email },
-          { $setOnInsert: { createdAt: new Date() }, $set: studentDocument },
-          { upsert: true, returnDocument: "after" }
-        );
+        const upsertResult = await db
+          .collection("students")
+          .findOneAndUpdate(
+            { email },
+            { $setOnInsert: { createdAt: new Date() }, $set: studentDocument },
+            { upsert: true, returnDocument: "after" }
+          );
 
         processedStudents.push({
           uid: firebaseUser.uid,
@@ -300,12 +316,11 @@ const addStudents = async (req, res) => {
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
         });
-
       } catch (error) {
         errors.push({
           row: index + 1,
           error: error.message,
-          data: raw
+          data: raw,
         });
       }
     }
@@ -316,12 +331,11 @@ const addStudents = async (req, res) => {
       stats: {
         total: results.length,
         successful: processedStudents.length,
-        failed: errors.length
+        failed: errors.length,
       },
       data: processedStudents,
-      errors: errors.length > 0 ? errors : undefined
+      errors: errors.length > 0 ? errors : undefined,
     });
-
   } catch (error) {
     console.error("[Admin API] Error occurred in student data adding:", error);
     res.status(500).json({
