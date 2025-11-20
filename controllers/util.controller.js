@@ -6,7 +6,7 @@ const db = await getDB(DB_NAME);
 const getStats = async (req, res) => {
     try {
         // Get all faculty documents
-        const facultyDocs = await db.collection("faculty").find({}).toArray();
+        const facultyDocs = await db.collection("faculties").find({}).toArray();
 
         // Get all student documents
         const studentDocs = await db.collection("students").find({}).toArray();
