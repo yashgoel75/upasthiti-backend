@@ -38,6 +38,7 @@ const getFaculties = async (req, res) => {
         {
           projection: {
             facultyId: 1,
+            departmentId: 1,
             name: 1,
             email: 1,
             type: 1,
