@@ -156,6 +156,8 @@ const addFaculties = async (req, res) => {
         // Prepare MongoDB document
         const facultyDocument = {
           uid: firebaseUser.uid,
+          facultyId: record.facultyId,
+          departmentId: record.departmentId,
           email,
           name,
           schoolId: record.schoolId,
