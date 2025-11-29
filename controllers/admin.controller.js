@@ -3,6 +3,7 @@ import getDB from "../db/index.js";
 import csv from "csv-parser";
 import { Readable } from "stream";
 import admin from "../utils/firebase-admin.js";
+import { validateTimetableConflicts } from "../utils/timetable.utils.js";
 
 const db = await getDB(DB_NAME);
 
@@ -156,8 +157,6 @@ const addFaculties = async (req, res) => {
         // Prepare MongoDB document
         const facultyDocument = {
           uid: firebaseUser.uid,
-          facultyId: record.facultyId,
-          departmentId: record.departmentId,
           email,
           name,
           schoolId: record.schoolId,
@@ -347,4 +346,382 @@ const addStudents = async (req, res) => {
   }
 };
 
-export { getAdminInfo, updateProfile, addFaculties, addStudents };
+// ==================== TIMETABLE MANAGEMENT ====================
+
+/**
+ * Upload a new timetable
+ * POST /api/admin/timetables/upload
+ */
+const uploadTimetable = async (req, res) => {
+  try {
+    const timetableData = req.body;
+
+    // Validate required fields
+    const requiredFields = ["department", "section", "semester", "validFrom", "validUntil", "weekSchedule"];
+    const missingFields = requiredFields.filter((field) => !timetableData[field]);
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        error: "Missing required fields",
+        missingFields,
+      });
+    }
+
+    // Set branch as alias for department if not provided
+    if (!timetableData.branch) {
+      timetableData.branch = timetableData.department;
+    }
+
+    // Validate dates
+    const validFrom = new Date(timetableData.validFrom);
+    const validUntil = new Date(timetableData.validUntil);
+
+    if (validFrom >= validUntil) {
+      return res.status(400).json({
+        error: "validFrom must be before validUntil",
+      });
+    }
+
+    // Get existing timetables for conflict check
+    const existingTimetables = await db
+      .collection("timetables")
+      .find({ isActive: true })
+      .toArray();
+
+    // Validate for conflicts
+    const validation = validateTimetableConflicts(timetableData, existingTimetables);
+
+    if (!validation.isValid) {
+      return res.status(409).json({
+        error: "Timetable has conflicts",
+        conflicts: validation.conflicts,
+      });
+    }
+
+    // Validate that teachers exist (optional but recommended)
+    const teacherIds = new Set();
+    for (const [day, periods] of Object.entries(timetableData.weekSchedule)) {
+      for (const period of periods) {
+        if (period.teacherId) teacherIds.add(period.teacherId);
+        if (period.isGroupSplit && period.groups) {
+          if (period.groups.group1?.teacherId) teacherIds.add(period.groups.group1.teacherId);
+          if (period.groups.group2?.teacherId) teacherIds.add(period.groups.group2.teacherId);
+        }
+      }
+    }
+
+    // Check if teachers exist (non-blocking warning)
+    const teacherIdsArray = Array.from(teacherIds);
+    const existingTeachers = await db
+      .collection("faculties")
+      .find({ uid: { $in: teacherIdsArray } })
+      .toArray();
+
+    const existingTeacherIds = new Set(existingTeachers.map((t) => t.uid));
+    const missingTeachers = teacherIdsArray.filter((id) => !existingTeacherIds.has(id));
+
+    // Insert timetable
+    const result = await db.collection("timetables").insertOne({
+      ...timetableData,
+      validFrom,
+      validUntil,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Timetable uploaded successfully",
+      timetableId: result.insertedId,
+      warnings: missingTeachers.length > 0 ? {
+        message: "Some teachers not found in system",
+        missingTeachers,
+      } : undefined,
+    });
+  } catch (error) {
+    console.error("[Admin API] Error uploading timetable:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get timetables with filters
+ * GET /api/admin/timetables
+ */
+const getTimetables = async (req, res) => {
+  try {
+    const { department, section, semester, isActive, classId } = req.query;
+
+    const filter = {};
+    if (department) filter.department = department;
+    if (section) filter.section = section;
+    if (semester) filter.semester = parseInt(semester);
+    if (isActive !== undefined) filter.isActive = isActive === "true";
+    if (classId) filter.classId = classId;
+
+    const timetables = await db
+      .collection("timetables")
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.json({
+      success: true,
+      count: timetables.length,
+      data: timetables,
+    });
+  } catch (error) {
+    console.error("[Admin API] Error fetching timetables:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Get a single timetable by ID
+ * GET /api/admin/timetables/:id
+ */
+const getTimetableById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { ObjectId } = await import("mongodb");
+    const timetable = await db
+      .collection("timetables")
+      .findOne({ _id: new ObjectId(id) });
+
+    if (!timetable) {
+      return res.status(404).json({
+        error: "Timetable not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: timetable,
+    });
+  } catch (error) {
+    console.error("[Admin API] Error fetching timetable:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Update a timetable
+ * PUT /api/admin/timetables/:id
+ */
+const updateTimetable = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const { ObjectId } = await import("mongodb");
+
+    // Get existing timetable
+    const existing = await db
+      .collection("timetables")
+      .findOne({ _id: new ObjectId(id) });
+
+    if (!existing) {
+      return res.status(404).json({
+        error: "Timetable not found",
+      });
+    }
+
+    // Validate dates if provided
+    if (updates.validFrom || updates.validUntil) {
+      const validFrom = updates.validFrom ? new Date(updates.validFrom) : existing.validFrom;
+      const validUntil = updates.validUntil ? new Date(updates.validUntil) : existing.validUntil;
+
+      if (validFrom >= validUntil) {
+        return res.status(400).json({
+          error: "validFrom must be before validUntil",
+        });
+      }
+    }
+
+    // Update timetable
+    const result = await db
+      .collection("timetables")
+      .findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        {
+          $set: {
+            ...updates,
+            updatedAt: new Date(),
+          },
+        },
+        { returnDocument: "after" }
+      );
+
+    res.json({
+      success: true,
+      message: "Timetable updated successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.error("[Admin API] Error updating timetable:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Delete (deactivate) a timetable
+ * DELETE /api/admin/timetables/:id
+ */
+const deleteTimetable = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permanent } = req.query;
+
+    const { ObjectId } = await import("mongodb");
+
+    if (permanent === "true") {
+      // Permanent deletion
+      const result = await db
+        .collection("timetables")
+        .deleteOne({ _id: new ObjectId(id) });
+
+      if (result.deletedCount === 0) {
+        return res.status(404).json({
+          error: "Timetable not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Timetable permanently deleted",
+      });
+    } else {
+      // Soft delete (deactivate)
+      const result = await db
+        .collection("timetables")
+        .findOneAndUpdate(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              isActive: false,
+              updatedAt: new Date(),
+            },
+          },
+          { returnDocument: "after" }
+        );
+
+      if (!result) {
+        return res.status(404).json({
+          error: "Timetable not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Timetable deactivated",
+        data: result,
+      });
+    }
+  } catch (error) {
+    console.error("[Admin API] Error deleting timetable:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Bulk upload timetables
+ * POST /api/admin/timetables/bulk
+ */
+const bulkUploadTimetables = async (req, res) => {
+  try {
+    const { timetables } = req.body;
+
+    if (!Array.isArray(timetables) || timetables.length === 0) {
+      return res.status(400).json({
+        error: "timetables must be a non-empty array",
+      });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const [index, timetableData] of timetables.entries()) {
+      try {
+        // Validate required fields
+        const requiredFields = ["department", "section", "semester", "validFrom", "validUntil", "weekSchedule"];
+        const missingFields = requiredFields.filter((field) => !timetableData[field]);
+
+        if (missingFields.length > 0) {
+          errors.push({
+            index,
+            error: "Missing required fields",
+            missingFields,
+          });
+          continue;
+        }
+
+        // Set branch as alias
+        if (!timetableData.branch) {
+          timetableData.branch = timetableData.department;
+        }
+
+        const validFrom = new Date(timetableData.validFrom);
+        const validUntil = new Date(timetableData.validUntil);
+
+        const result = await db.collection("timetables").insertOne({
+          ...timetableData,
+          validFrom,
+          validUntil,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        results.push({
+          index,
+          timetableId: result.insertedId,
+          department: timetableData.department,
+          section: timetableData.section,
+          semester: timetableData.semester,
+        });
+      } catch (error) {
+        errors.push({
+          index,
+          error: error.message,
+        });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Bulk upload completed",
+      stats: {
+        total: timetables.length,
+        successful: results.length,
+        failed: errors.length,
+      },
+      results,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error) {
+    console.error("[Admin API] Error in bulk upload:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+export { getAdminInfo, updateProfile, addFaculties, addStudents, uploadTimetable, getTimetables, getTimetableById, updateTimetable, deleteTimetable, bulkUploadTimetables };
