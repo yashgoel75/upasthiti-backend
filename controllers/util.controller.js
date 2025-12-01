@@ -1,14 +1,16 @@
 import connectDB from "../db/index.js";
+import { Faculty } from "../models/faculty.model.js";
+import { Student } from "../models/student.model.js";
 
 await connectDB();
 
 const getStats = async (req, res) => {
   try {
     // Get all faculty documents
-    const facultyDocs = await db.collection("faculties").find({}).toArray();
+    const facultyDocs = await Faculty.find({});
 
     // Get all student documents
-    const studentDocs = await db.collection("students").find({}).toArray();
+    const studentDocs = await Student.find({});
 
     // Segregate faculty by type
     const facultyByType = {

@@ -9,6 +9,9 @@ import {
   calculateAttendancePercentage,
 } from "../utils/timetable.utils.js";
 import connectDB from "../db/index.js";
+import { Faculty } from "../models/faculty.model.js";
+import { Timetable } from "../models/timetable.model.js";
+import { Student } from "../models/student.model.js";
 
 await connectDB();
 
@@ -22,7 +25,7 @@ const getFaculty = async (req, res) => {
             });
         }
 
-        const result = await db.collection("faculties").find({ uid }).toArray();
+        const result = await Faculty.find({ uid });
 
         res.json({
             success: true,
@@ -40,14 +43,14 @@ const getFaculty = async (req, res) => {
 
 const getFaculties = async (req, res) => {
     try {
-        const result = await db.collection("faculties").find(
+        const result = await Faculty.find(
             {},
             {
                 projection: {
                     name: 1, email: 1, schoolId: 1, type: 1, _id: 0
                 }
             }
-        ).toArray();
+        );
 
         res.json({
             success: true,
@@ -97,7 +100,7 @@ const startAttendanceSession = async (req, res) => {
     const dayOfWeek = getDayName(sessionDate);
 
     // Get active timetable for this class
-    const timetable = await db.collection("timetables").findOne({
+    const timetable = await Timetable.findOne({
       classId,
       section,
       semester,
@@ -193,7 +196,7 @@ const startAttendanceSession = async (req, res) => {
         studentFilter.uid = { $in: studentIds };
       } else {
         // Auto-assign groups if not already assigned
-        const allStudents = await db.collection("students").find({ classId, section }).toArray();
+        const allStudents = await Student.find({ classId, section });
 
         for (const student of allStudents) {
           const assignedGroup = resolveGroupAssignment(
@@ -227,10 +230,10 @@ const startAttendanceSession = async (req, res) => {
       }
     }
 
-    const students = await db.collection("students").find(studentFilter).toArray();
+    const students = await Student.find(studentFilter).toArray();
 
     // Get teacher name
-    const teacher = await db.collection("faculties").findOne({ uid: teacherId });
+    const teacher = await Faculty.findOne({ uid: teacherId });
 
     // Create session
     const session = {
@@ -670,23 +673,42 @@ const getTeacherScheduleForDate = async (req, res) => {
       });
     }
 
-    const scheduleDate = date ? new Date(date) : new Date();
+    let scheduleDate;
+    
+    if (date) {
+      // Try to parse date in multiple formats
+      // Supports: YYYY-MM-DD, YYYY/MM/DD, MM-DD-YYYY, MM/DD/YYYY, ISO 8601
+      scheduleDate = new Date(date);
+      
+      // Check if date is invalid
+      if (isNaN(scheduleDate.getTime())) {
+        return res.status(400).json({
+          error: "Invalid date format",
+          hint: "Use formats like: YYYY-MM-DD, YYYY/MM/DD, or ISO 8601 (2025-12-02T00:00:00Z)",
+          received: date
+        });
+      }
+      
+      // Set time to start of day to avoid timezone issues
+      scheduleDate.setHours(0, 0, 0, 0);
+    } else {
+      scheduleDate = new Date();
+      scheduleDate.setHours(0, 0, 0, 0);
+    }
 
     // Get all active timetables
-    const timetables = await db
-      .collection("timetables")
+    const timetables = await Timetable
       .find({
         isActive: true,
         validFrom: { $lte: scheduleDate },
         validUntil: { $gte: scheduleDate },
-      })
-      .toArray();
+      });
 
     const schedule = getTeacherSchedule(teacherId, scheduleDate, timetables);
 
     res.json({
       success: true,
-      date: scheduleDate,
+      date: scheduleDate.toISOString().split('T')[0], // Return YYYY-MM-DD format
       dayOfWeek: getDayName(scheduleDate),
       count: schedule.length,
       schedule,
@@ -699,5 +721,6 @@ const getTeacherScheduleForDate = async (req, res) => {
     });
   }
 };
+
 
 export { getFaculty, getFaculties, startAttendanceSession, markAttendance, markBulkAttendance, endAttendanceSession, getSessionHistory, getTeacherScheduleForDate };
