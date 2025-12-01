@@ -9,6 +9,8 @@ import {
     getTimetableById,
     updateTimetable,
     deleteTimetable,
+    getSubjects,
+    addSubjects,
 } from "../controllers/admin.controller.js";
 import multer from "multer";
 
@@ -32,6 +34,10 @@ router.route('/').get(getAdminInfo);
 router.route('/update').patch(updateProfile);
 router.route('/faculties/upload').post(upload.single('csvFile'), addFaculties);
 router.route('/students/upload').post(upload.single('csvFile'), addStudents);
+
+// Subject routes
+router.route('/subjects').get(getSubjects);
+router.route('/subjects/upload').post(upload.single('csvFile'), addSubjects);
 
 // Timetable routes
 router.route('/timetables/upload').post(upload.single('csvFile'), uploadTimetable);

@@ -357,11 +357,138 @@ const addStudents = async (req, res) => {
   }
 };
 
-// ==================== TIMETABLE MANAGEMENT ====================
+const addSubjects = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No CSV file uploaded" });
+    }
+
+    const results = [];
+    const errors = [];
+
+    // Parse CSV file
+    const stream = Readable.from(req.file.buffer.toString());
+
+    await new Promise((resolve, reject) => {
+      stream
+        .pipe(csv())
+        .on("data", (data) => results.push(data))
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    if (results.length === 0) {
+      return res.status(400).json({ error: "CSV file is empty" });
+    }
+
+    // Process each subject record
+    const processedSubjects = [];
+
+    for (const [index, raw] of results.entries()) {
+      try {
+        const record = {};
+        for (const k of Object.keys(raw))
+          record[k.trim()] =
+            typeof raw[k] === "string" ? raw[k].trim() : raw[k];
+
+        // Validate required fields
+        const name = record.name || null;
+        const code = record.code || null;
+        const credits = record.credits ? parseInt(record.credits) : null;
+
+        if (!name || !code || !credits) {
+          errors.push({
+            row: index + 1,
+            error: "Missing required fields (name/code/credits)",
+            data: raw,
+          });
+          continue;
+        }
+
+        // Prepare subject data
+        const subjectData = {
+          name,
+          code: code.toUpperCase(),
+          credits,
+        };
+
+        // Use Mongoose findOneAndUpdate with upsert
+        const subject = await Subject.findOneAndUpdate(
+          { code: code.toUpperCase() },
+          subjectData,
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+
+        processedSubjects.push({
+          _id: subject._id,
+          name: subject.name,
+          code: subject.code,
+          credits: subject.credits,
+        });
+      } catch (error) {
+        errors.push({
+          row: index + 1,
+          error: error.message,
+          data: raw,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Subject upload process completed",
+      stats: {
+        total: results.length,
+        successful: processedSubjects.length,
+        failed: errors.length,
+      },
+      data: processedSubjects,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error) {
+    console.error("[Admin API] Error occurred in subject data adding:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+const getSubjects = async (req, res) => {
+  try {
+    const { code, search } = req.query;
+
+    const filter = {};
+    
+    if (code) {
+      filter.code = code.toUpperCase();
+    }
+    
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { code: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const subjects = await Subject.find(filter).sort({ code: 1 });
+
+    res.json({
+      success: true,
+      count: subjects.length,
+      data: subjects,
+    });
+  } catch (error) {
+    console.error("[Admin API] Error fetching subjects:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
 
 /**
  * Upload timetable from CSV file
- * POST /api/admin/timetables/upload-csv
  */
 const uploadTimetable = async (req, res) => {
   try {
@@ -674,6 +801,7 @@ const uploadTimetable = async (req, res) => {
   }
 };
 
+
 const getTimetables = async (req, res) => {
   try {
     const { department, section, semester, isActive, classId } = req.query;
@@ -824,13 +952,13 @@ const deleteTimetable = async (req, res) => {
   }
 };
 
-
-
 export {
   getAdminInfo,
   updateProfile,
   addFaculties,
   addStudents,
+  addSubjects,
+  getSubjects,
   uploadTimetable,
   getTimetables,
   getTimetableById,
