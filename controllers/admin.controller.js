@@ -1,11 +1,21 @@
-import { DB_NAME } from "../constant.js";
-import getDB from "../db/index.js";
 import csv from "csv-parser";
 import { Readable } from "stream";
 import admin from "../utils/firebase-admin.js";
-import { validateTimetableConflicts } from "../utils/timetable.utils.js";
+import {
+  validateTimetableConflicts,
+  parseTimetableCSV,
+  mapTeacherNamesToUIDs
+} from "../utils/timetable.utils.js";
+import { Faculty } from "../models/faculty.model.js";
+import { Student } from "../models/student.model.js";
+import { Subject } from "../models/subject.model.js";
+import connectDB from "../db/index.js";
+import { Timetable } from "../models/timetable.model.js";
+import mongoose from "mongoose";
 
-const db = await getDB(DB_NAME);
+
+await connectDB();
+
 
 const getAdminInfo = async (req, res) => {
   try {
@@ -31,8 +41,8 @@ const getAdminInfo = async (req, res) => {
             ...admin,
             school: school
               ? {
-                  name: school.name,
-                }
+                name: school.name,
+              }
               : null,
           };
         }
@@ -154,25 +164,27 @@ const addFaculties = async (req, res) => {
           }
         }
 
-        // Prepare MongoDB document
-        const facultyDocument = {
+        // Prepare faculty data using Mongoose model
+        const facultyData = {
           uid: firebaseUser.uid,
-          email,
+          officialEmail: email,
           name,
+          facultyId: record.facultyId,
           schoolId: record.schoolId,
+          departmentId: record.departmentId,
+          branch: record.branch,
           phone: record.phone || null,
           type: record.type,
-          updatedAt: new Date(),
-          isActive: true,
         };
 
-        const upsertResult = await db
-          .collection("faculties")
-          .findOneAndUpdate(
-            { email },
-            { $setOnInsert: { createdAt: new Date() }, $set: facultyDocument },
-            { upsert: true, returnDocument: "after" }
-          );
+        // Use Mongoose findOneAndUpdate with upsert
+        await Faculty.findOneAndUpdate(
+          {
+            officialEmail: email,
+          },
+          facultyData,
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
 
         processedFaculties.push({
           uid: firebaseUser.uid,
@@ -181,6 +193,7 @@ const addFaculties = async (req, res) => {
           password: process.env.FACULTY_PASSWORD,
           name: record.name,
           departmentId: record.departmentId,
+          branch: record.branch,
           schoolId: record.schoolId,
           phone: record.phone,
           type: record.type,
@@ -280,40 +293,38 @@ const addStudents = async (req, res) => {
         }
 
         // Prepare MongoDB document
-        const studentDocument = {
+        const studentData = {
           uid: firebaseUser.uid,
-          email: email,
-          name: name,
-          classId: rec.classId,
+          email,
+          name,
+          classId: `${rec.branch}-${rec.section}`,
           enrollmentNo: rec.enrollmentNo || null,
           phone: rec.phone || null,
           branch: rec.branch,
           section: rec.section,
+          semester: rec.semester,
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
-          updatedAt: new Date(),
-          isActive: true,
         };
 
         // Insert into MongoDB
-        const upsertResult = await db
-          .collection("students")
-          .findOneAndUpdate(
-            { email },
-            { $setOnInsert: { createdAt: new Date() }, $set: studentDocument },
-            { upsert: true, returnDocument: "after" }
-          );
+        await Student.findOneAndUpdate(
+          { email },
+          studentData,
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
 
         processedStudents.push({
           uid: firebaseUser.uid,
           email,
           password: process.env.STUDENT_PASSWORD,
           name,
-          classId: rec.classId,
+          classId: `${rec.branch}-${rec.section}`,
           enrollmentNo: rec.enrollmentNo || null,
           phone: rec.phone || null,
           branch: rec.branch,
           section: rec.section,
+          semester: rec.semester,
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
         });
@@ -349,44 +360,254 @@ const addStudents = async (req, res) => {
 // ==================== TIMETABLE MANAGEMENT ====================
 
 /**
- * Upload a new timetable
- * POST /api/admin/timetables/upload
+ * Upload timetable from CSV file
+ * POST /api/admin/timetables/upload-csv
  */
 const uploadTimetable = async (req, res) => {
   try {
-    const timetableData = req.body;
+    if (!req.file) {
+      return res.status(400).json({ error: "No CSV file uploaded" });
+    }
 
-    // Validate required fields
-    const requiredFields = ["department", "section", "semester", "validFrom", "validUntil", "weekSchedule"];
-    const missingFields = requiredFields.filter((field) => !timetableData[field]);
+    const { validFrom, validUntil } = req.body;
 
-    if (missingFields.length > 0) {
+    if (!validFrom || !validUntil) {
       return res.status(400).json({
-        error: "Missing required fields",
-        missingFields,
+        error: "Missing required fields: validFrom, validUntil"
       });
     }
 
-    // Set branch as alias for department if not provided
-    if (!timetableData.branch) {
-      timetableData.branch = timetableData.department;
-    }
-
     // Validate dates
-    const validFrom = new Date(timetableData.validFrom);
-    const validUntil = new Date(timetableData.validUntil);
+    const validFromDate = new Date(validFrom);
+    const validUntilDate = new Date(validUntil);
 
-    if (validFrom >= validUntil) {
+    if (validFromDate >= validUntilDate) {
       return res.status(400).json({
         error: "validFrom must be before validUntil",
       });
     }
 
+    // Parse CSV content
+    const csvContent = req.file.buffer.toString();
+    let timetableData;
+
+    try {
+      timetableData = parseTimetableCSV(csvContent);
+
+      // Log parsed data for debugging
+      // console.log('[Admin API] Parsed timetable data:');
+      // console.log('Department:', timetableData.department);
+      // console.log('Section:', timetableData.section);
+      // console.log('Semester:', timetableData.semester);
+
+      // Log Tuesday schedule (where the split labs are)
+      // if (timetableData.weekSchedule.tuesday) {
+      //   console.log('\n[Admin API] Tuesday schedule:');
+      //   timetableData.weekSchedule.tuesday.forEach((period, idx) => {
+      //     console.log(`\nPeriod ${period.period} (${period.time}):`);
+      //     console.log('  Type:', period.type);
+      //     console.log('  IsGroupSplit:', period.isGroupSplit);
+      //     if (period.isGroupSplit && period.groups) {
+      //       console.log('  Group 1:');
+      //       console.log('    Subject:', period.groups.group1.subjectCode);
+      //       console.log('    Teacher:', period.groups.group1.teacherId);
+      //       console.log('    Room:', period.groups.group1.room);
+      //       console.log('  Group 2:');
+      //       console.log('    Subject:', period.groups.group2.subjectCode);
+      //       console.log('    Teacher:', period.groups.group2.teacherId);
+      //       console.log('    Room:', period.groups.group2.room);
+      //     } else {
+      //       console.log('  Subject:', period.subjectCode);
+      //       console.log('  Teacher:', period.teacherId);
+      //       console.log('  Room:', period.room);
+      //     }
+      //   });
+      // }
+
+      // Log Thursday schedule (where there are both split and reverse order)
+      // if (timetableData.weekSchedule.thursday) {
+      //   console.log('\n[Admin API] Thursday schedule:');
+      //   timetableData.weekSchedule.thursday.forEach((period, idx) => {
+      //     console.log(`\nPeriod ${period.period} (${period.time}):`);
+      //     console.log('  Type:', period.type);
+      //     console.log('  IsGroupSplit:', period.isGroupSplit);
+      //     if (period.isGroupSplit && period.groups) {
+      //       console.log('  Group 1:');
+      //       console.log('    Subject:', period.groups.group1.subjectCode);
+      //       console.log('    Teacher:', period.groups.group1.teacherId);
+      //       console.log('    Room:', period.groups.group1.room);
+      //       console.log('  Group 2:');
+      //       console.log('    Subject:', period.groups.group2.subjectCode);
+      //       console.log('    Teacher:', period.groups.group2.teacherId);
+      //       console.log('    Room:', period.groups.group2.room);
+      //     } else if (period.groupNumber) {
+      //       console.log('  Single Group Lab - Group:', period.groupNumber);
+      //       console.log('  Subject:', period.subjectCode);
+      //       console.log('  Teacher:', period.teacherId);
+      //       console.log('  Room:', period.room);
+      //     } else {
+      //       console.log('  Subject:', period.subjectCode);
+      //       console.log('  Teacher:', period.teacherId);
+      //       console.log('  Room:', period.room);
+      //     }
+      //   });
+      // }
+
+    } catch (parseError) {
+      console.error('[Admin API] CSV parsing error:', parseError);
+      return res.status(400).json({
+        error: "CSV parsing error",
+        message: parseError.message,
+      });
+    }
+
+    // Get all faculties and subjects from database
+    const faculties = await Faculty.find({});
+    const subjects = await Subject.find({});
+
+    // Create mapping objects for quick lookup
+    const facultyIdToUidMap = {};
+    const subjectCodeToDetailsMap = {};
+
+    // Map faculty IDs (like VIPSF105) to UIDs
+    faculties.forEach(faculty => {
+      if (faculty.facultyId) {
+        facultyIdToUidMap[faculty.facultyId.trim().toUpperCase()] = {
+          uid: faculty.uid,
+          name: faculty.name,
+          email: faculty.email
+        };
+      }
+    });
+
+    // Map subject codes (like AIML302) to subject details
+    subjects.forEach(subject => {
+      if (subject.code) {
+        subjectCodeToDetailsMap[subject.code.trim().toUpperCase()] = {
+          _id: subject._id,
+          name: subject.name,
+          code: subject.code,
+          credits: subject.credits
+        };
+      }
+    });
+
+    // Track unmapped faculty IDs and subject codes
+    const unmappedFacultyIds = [];
+    const unmappedSubjectCodes = [];
+
+    // Map faculty IDs and subject codes in the timetable
+    for (const [day, periods] of Object.entries(timetableData.weekSchedule)) {
+      for (const period of periods) {
+        // Skip non-class/non-lab periods
+        if (period.type !== 'class' && period.type !== 'lab') {
+          continue;
+        }
+
+        // Handle subject code mapping for regular and single-group periods
+        if (period.subjectCode && !period.isGroupSplit) {
+          const subjectCodeUpper = period.subjectCode.trim().toUpperCase();
+          const subjectDetails = subjectCodeToDetailsMap[subjectCodeUpper];
+
+          if (subjectDetails) {
+            period.subjectId = subjectDetails._id.toString();
+            period.subjectName = subjectDetails.name;
+            period.subjectCredits = subjectDetails.credits;
+          } else {
+            unmappedSubjectCodes.push(period.subjectCode);
+            console.warn(`[Admin API] Unmapped subject code: ${period.subjectCode}`);
+          }
+        }
+
+        // Handle faculty mapping for split periods
+        if (period.isGroupSplit && period.groups) {
+          // Handle group 1 subjects
+          if (period.groups.group1 && period.groups.group1.subjectCode) {
+            const subjectCodeUpper = period.groups.group1.subjectCode.trim().toUpperCase();
+            const subjectDetails = subjectCodeToDetailsMap[subjectCodeUpper];
+
+            if (subjectDetails) {
+              period.groups.group1.subjectId = subjectDetails._id.toString();
+              period.groups.group1.subjectName = subjectDetails.name;
+              period.groups.group1.subjectCredits = subjectDetails.credits;
+            } else {
+              unmappedSubjectCodes.push(period.groups.group1.subjectCode);
+              console.warn(`[Admin API] Unmapped subject code (Group 1): ${period.groups.group1.subjectCode}`);
+            }
+          }
+
+          // Handle group 2 subjects
+          if (period.groups.group2 && period.groups.group2.subjectCode) {
+            const subjectCodeUpper = period.groups.group2.subjectCode.trim().toUpperCase();
+            const subjectDetails = subjectCodeToDetailsMap[subjectCodeUpper];
+
+            if (subjectDetails) {
+              period.groups.group2.subjectId = subjectDetails._id.toString();
+              period.groups.group2.subjectName = subjectDetails.name;
+              period.groups.group2.subjectCredits = subjectDetails.credits;
+            } else {
+              unmappedSubjectCodes.push(period.groups.group2.subjectCode);
+              console.warn(`[Admin API] Unmapped subject code (Group 2): ${period.groups.group2.subjectCode}`);
+            }
+          }
+
+          // Handle group 1 faculty
+          if (period.groups.group1 && period.groups.group1.teacherId) {
+            const facultyIdUpper = period.groups.group1.teacherId.trim().toUpperCase();
+            const facultyInfo = facultyIdToUidMap[facultyIdUpper];
+
+            if (facultyInfo) {
+              period.groups.group1.teacherUid = facultyInfo.uid;
+              period.groups.group1.teacherName = facultyInfo.name;
+              period.groups.group1.teacherEmail = facultyInfo.email;
+              console.log(`[Admin API] Mapped faculty (Group 1): ${period.groups.group1.teacherId} -> ${facultyInfo.name}`);
+            } else {
+              unmappedFacultyIds.push(period.groups.group1.teacherId);
+              console.warn(`[Admin API] Unmapped faculty (Group 1): ${period.groups.group1.teacherId}`);
+            }
+          }
+
+          // Handle group 2 faculty
+          if (period.groups.group2 && period.groups.group2.teacherId) {
+            const facultyIdUpper = period.groups.group2.teacherId.trim().toUpperCase();
+            const facultyInfo = facultyIdToUidMap[facultyIdUpper];
+
+            if (facultyInfo) {
+              period.groups.group2.teacherUid = facultyInfo.uid;
+              period.groups.group2.teacherName = facultyInfo.name;
+              period.groups.group2.teacherEmail = facultyInfo.email;
+              console.log(`[Admin API] Mapped faculty (Group 2): ${period.groups.group2.teacherId} -> ${facultyInfo.name}`);
+            } else {
+              unmappedFacultyIds.push(period.groups.group2.teacherId);
+              console.warn(`[Admin API] Unmapped faculty (Group 2): ${period.groups.group2.teacherId}`);
+            }
+          }
+        } else {
+          // Handle single teacher (regular or single-group lab)
+          if (period.teacherId) {
+            const facultyIdUpper = period.teacherId.trim().toUpperCase();
+            const facultyInfo = facultyIdToUidMap[facultyIdUpper];
+
+            if (facultyInfo) {
+              period.teacherUid = facultyInfo.uid;
+              period.teacherName = facultyInfo.name;
+              period.teacherEmail = facultyInfo.email;
+              console.log(`[Admin API] Mapped faculty: ${period.teacherId} -> ${facultyInfo.name}`);
+            } else {
+              unmappedFacultyIds.push(period.teacherId);
+              console.warn(`[Admin API] Unmapped faculty: ${period.teacherId}`);
+            }
+          }
+        }
+      }
+    }
+
+    // Add validity period
+    timetableData.validFrom = validFromDate;
+    timetableData.validUntil = validUntilDate;
+
     // Get existing timetables for conflict check
-    const existingTimetables = await db
-      .collection("timetables")
-      .find({ isActive: true })
-      .toArray();
+    const existingTimetables = await Timetable.find({ isActive: true });
 
     // Validate for conflicts
     const validation = validateTimetableConflicts(timetableData, existingTimetables);
@@ -395,52 +616,57 @@ const uploadTimetable = async (req, res) => {
       return res.status(409).json({
         error: "Timetable has conflicts",
         conflicts: validation.conflicts,
+        warning: "You can force upload by setting forceUpload=true",
       });
     }
 
-    // Validate that teachers exist (optional but recommended)
-    const teacherIds = new Set();
-    for (const [day, periods] of Object.entries(timetableData.weekSchedule)) {
-      for (const period of periods) {
-        if (period.teacherId) teacherIds.add(period.teacherId);
-        if (period.isGroupSplit && period.groups) {
-          if (period.groups.group1?.teacherId) teacherIds.add(period.groups.group1.teacherId);
-          if (period.groups.group2?.teacherId) teacherIds.add(period.groups.group2.teacherId);
-        }
-      }
+    // Prepare warnings
+    const warnings = {};
+
+    if (unmappedFacultyIds.length > 0) {
+      warnings.unmappedFaculties = {
+        message: "Some faculty IDs could not be mapped to database records",
+        facultyIds: [...new Set(unmappedFacultyIds)],
+      };
     }
 
-    // Check if teachers exist (non-blocking warning)
-    const teacherIdsArray = Array.from(teacherIds);
-    const existingTeachers = await db
-      .collection("faculties")
-      .find({ uid: { $in: teacherIdsArray } })
-      .toArray();
+    if (unmappedSubjectCodes.length > 0) {
+      warnings.unmappedSubjects = {
+        message: "Some subject codes could not be mapped to database records",
+        subjectCodes: [...new Set(unmappedSubjectCodes)],
+      };
+    }
 
-    const existingTeacherIds = new Set(existingTeachers.map((t) => t.uid));
-    const missingTeachers = teacherIdsArray.filter((id) => !existingTeacherIds.has(id));
-
-    // Insert timetable
-    const result = await db.collection("timetables").insertOne({
+    // Insert timetable using Mongoose
+    const newTimetable = new Timetable({
       ...timetableData,
-      validFrom,
-      validUntil,
       isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
     });
+
+    const result = await newTimetable.save();
 
     res.status(201).json({
       success: true,
-      message: "Timetable uploaded successfully",
-      timetableId: result.insertedId,
-      warnings: missingTeachers.length > 0 ? {
-        message: "Some teachers not found in system",
-        missingTeachers,
-      } : undefined,
+      message: "Timetable uploaded successfully from CSV",
+      timetableId: result._id,
+      data: {
+        classId: timetableData.classId,
+        department: timetableData.department,
+        section: timetableData.section,
+        semester: timetableData.semester,
+        validFrom: timetableData.validFrom,
+        validUntil: timetableData.validUntil,
+      },
+      mappingStats: {
+        totalFaculties: faculties.length,
+        totalSubjects: subjects.length,
+        unmappedFacultiesCount: unmappedFacultyIds.length,
+        unmappedSubjectsCount: unmappedSubjectCodes.length,
+      },
+      warnings: Object.keys(warnings).length > 0 ? warnings : undefined,
     });
   } catch (error) {
-    console.error("[Admin API] Error uploading timetable:", error);
+    console.error("[Admin API] Error uploading timetable CSV:", error);
     res.status(500).json({
       error: "Internal server error",
       message: error.message,
@@ -448,10 +674,6 @@ const uploadTimetable = async (req, res) => {
   }
 };
 
-/**
- * Get timetables with filters
- * GET /api/admin/timetables
- */
 const getTimetables = async (req, res) => {
   try {
     const { department, section, semester, isActive, classId } = req.query;
@@ -463,11 +685,7 @@ const getTimetables = async (req, res) => {
     if (isActive !== undefined) filter.isActive = isActive === "true";
     if (classId) filter.classId = classId;
 
-    const timetables = await db
-      .collection("timetables")
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .toArray();
+    const timetables = await Timetable.find(filter).sort({ createdAt: -1 });
 
     res.json({
       success: true,
@@ -483,18 +701,14 @@ const getTimetables = async (req, res) => {
   }
 };
 
-/**
- * Get a single timetable by ID
- * GET /api/admin/timetables/:id
- */
 const getTimetableById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { ObjectId } = await import("mongodb");
-    const timetable = await db
-      .collection("timetables")
-      .findOne({ _id: new ObjectId(id) });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid id format" });
+    }
+    const timetable = await Timetable.findById(id);
 
     if (!timetable) {
       return res.status(404).json({
@@ -515,21 +729,13 @@ const getTimetableById = async (req, res) => {
   }
 };
 
-/**
- * Update a timetable
- * PUT /api/admin/timetables/:id
- */
 const updateTimetable = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
 
-    const { ObjectId } = await import("mongodb");
-
     // Get existing timetable
-    const existing = await db
-      .collection("timetables")
-      .findOne({ _id: new ObjectId(id) });
+    const existing = await Timetable.findById(id);
 
     if (!existing) {
       return res.status(404).json({
@@ -550,18 +756,11 @@ const updateTimetable = async (req, res) => {
     }
 
     // Update timetable
-    const result = await db
-      .collection("timetables")
-      .findOneAndUpdate(
-        { _id: new ObjectId(id) },
-        {
-          $set: {
-            ...updates,
-            updatedAt: new Date(),
-          },
-        },
-        { returnDocument: "after" }
-      );
+    const result = await Timetable.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
 
     res.json({
       success: true,
@@ -577,24 +776,16 @@ const updateTimetable = async (req, res) => {
   }
 };
 
-/**
- * Delete (deactivate) a timetable
- * DELETE /api/admin/timetables/:id
- */
 const deleteTimetable = async (req, res) => {
   try {
     const { id } = req.params;
     const { permanent } = req.query;
 
-    const { ObjectId } = await import("mongodb");
-
     if (permanent === "true") {
       // Permanent deletion
-      const result = await db
-        .collection("timetables")
-        .deleteOne({ _id: new ObjectId(id) });
+      const result = await Timetable.findByIdAndDelete(id);
 
-      if (result.deletedCount === 0) {
+      if (!result) {
         return res.status(404).json({
           error: "Timetable not found",
         });
@@ -606,18 +797,11 @@ const deleteTimetable = async (req, res) => {
       });
     } else {
       // Soft delete (deactivate)
-      const result = await db
-        .collection("timetables")
-        .findOneAndUpdate(
-          { _id: new ObjectId(id) },
-          {
-            $set: {
-              isActive: false,
-              updatedAt: new Date(),
-            },
-          },
-          { returnDocument: "after" }
-        );
+      const result = await Timetable.findByIdAndUpdate(
+        id,
+        { $set: { isActive: false } },
+        { new: true }
+      );
 
       if (!result) {
         return res.status(404).json({
@@ -640,88 +824,16 @@ const deleteTimetable = async (req, res) => {
   }
 };
 
-/**
- * Bulk upload timetables
- * POST /api/admin/timetables/bulk
- */
-const bulkUploadTimetables = async (req, res) => {
-  try {
-    const { timetables } = req.body;
 
-    if (!Array.isArray(timetables) || timetables.length === 0) {
-      return res.status(400).json({
-        error: "timetables must be a non-empty array",
-      });
-    }
 
-    const results = [];
-    const errors = [];
-
-    for (const [index, timetableData] of timetables.entries()) {
-      try {
-        // Validate required fields
-        const requiredFields = ["department", "section", "semester", "validFrom", "validUntil", "weekSchedule"];
-        const missingFields = requiredFields.filter((field) => !timetableData[field]);
-
-        if (missingFields.length > 0) {
-          errors.push({
-            index,
-            error: "Missing required fields",
-            missingFields,
-          });
-          continue;
-        }
-
-        // Set branch as alias
-        if (!timetableData.branch) {
-          timetableData.branch = timetableData.department;
-        }
-
-        const validFrom = new Date(timetableData.validFrom);
-        const validUntil = new Date(timetableData.validUntil);
-
-        const result = await db.collection("timetables").insertOne({
-          ...timetableData,
-          validFrom,
-          validUntil,
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-
-        results.push({
-          index,
-          timetableId: result.insertedId,
-          department: timetableData.department,
-          section: timetableData.section,
-          semester: timetableData.semester,
-        });
-      } catch (error) {
-        errors.push({
-          index,
-          error: error.message,
-        });
-      }
-    }
-
-    res.status(201).json({
-      success: true,
-      message: "Bulk upload completed",
-      stats: {
-        total: timetables.length,
-        successful: results.length,
-        failed: errors.length,
-      },
-      results,
-      errors: errors.length > 0 ? errors : undefined,
-    });
-  } catch (error) {
-    console.error("[Admin API] Error in bulk upload:", error);
-    res.status(500).json({
-      error: "Internal server error",
-      message: error.message,
-    });
-  }
+export {
+  getAdminInfo,
+  updateProfile,
+  addFaculties,
+  addStudents,
+  uploadTimetable,
+  getTimetables,
+  getTimetableById,
+  updateTimetable,
+  deleteTimetable
 };
-
-export { getAdminInfo, updateProfile, addFaculties, addStudents, uploadTimetable, getTimetables, getTimetableById, updateTimetable, deleteTimetable, bulkUploadTimetables };

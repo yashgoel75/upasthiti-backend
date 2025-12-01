@@ -9,7 +9,6 @@ import {
     getTimetableById,
     updateTimetable,
     deleteTimetable,
-    bulkUploadTimetables
 } from "../controllers/admin.controller.js";
 import multer from "multer";
 
@@ -35,8 +34,7 @@ router.route('/faculties/upload').post(upload.single('csvFile'), addFaculties);
 router.route('/students/upload').post(upload.single('csvFile'), addStudents);
 
 // Timetable routes
-router.route('/timetables/upload').post(uploadTimetable);
-router.route('/timetables/bulk').post(bulkUploadTimetables);
+router.route('/timetables/upload').post(upload.single('csvFile'), uploadTimetable);
 router.route('/timetables').get(getTimetables);
 router.route('/timetables/:id').get(getTimetableById);
 router.route('/timetables/:id').put(updateTimetable);

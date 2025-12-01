@@ -1,5 +1,4 @@
-import { DB_NAME } from "../constant.js";
-import getDB from "../db/index.js";
+
 import {
   getDayName,
   getCurrentPeriod,
@@ -9,8 +8,9 @@ import {
   resolveGroupAssignment,
   calculateAttendancePercentage,
 } from "../utils/timetable.utils.js";
+import connectDB from "../db/index.js";
 
-const db = await getDB(DB_NAME);
+await connectDB();
 
 const getFaculty = async (req, res) => {
     try {

@@ -1,7 +1,266 @@
 /**
  * Timetable Utility Functions
- * Handles timetable operations, schedule queries, and conflict detection
+ * Handles timetable operations, schedule queries, conflict detection, and CSV parsing
  */
+
+// ==================== CSV PARSING ====================
+
+/**
+ * Parse timetable CSV data
+ * Expected CSV format:
+ * Row 1: Class header (e.g., "AIML-B 5th Semester"), Period times
+ * Following rows: Day, Period data alternating
+ * - First row of day: Subject codes (with group info like "AIML353 (G1) / AIML351 (G2)")
+ * - Second row of day: Teacher names (separated by / for groups)
+ * - Third row of day: Classroom IDs (separated by / for groups)
+ * 
+ * @param {string} csvContent - Raw CSV content
+ * @returns {Object} Parsed timetable data
+ */
+export const parseTimetableCSV = (csvContent) => {
+  const lines = csvContent.split('\n').filter(line => line.trim());
+
+  if (lines.length < 4) {
+    throw new Error('Invalid CSV format: Too few rows');
+  }
+
+  // Parse header row
+  const headerCols = lines[0].split(',').map(col => col.trim());
+  const classInfo = headerCols[0]; // e.g., "AIML-B 5th Semester"
+  const periods = headerCols.slice(1); // Period times
+
+  // Extract class information
+  const classMatch = classInfo.match(/^([A-Z]+)-([A-Z])\s+(\d+)[a-z]{2}\s+Semester$/i);
+  if (!classMatch) {
+    throw new Error(`Invalid class format: ${classInfo}. Expected format: "DEPT-SECTION NTH Semester"`);
+  }
+
+  const [, department, section, semester] = classMatch;
+  const classId = `${department}-${section}`;
+
+  const weekSchedule = {
+    monday: [],
+    tuesday: [],
+    wednesday: [],
+    thursday: [],
+    friday: [],
+    saturday: [],
+  };
+
+  // Parse day rows (each day has 3 rows: subjects, teachers, rooms)
+  for (let i = 1; i < lines.length; i += 3) {
+    if (i + 2 >= lines.length) break;
+
+    const subjectRow = lines[i].split(',').map(col => col.trim());
+    const teacherRow = lines[i + 1].split(',').map(col => col.trim());
+    const roomRow = lines[i + 2].split(',').map(col => col.trim());
+
+    const dayName = subjectRow[0].toLowerCase();
+
+    if (!weekSchedule.hasOwnProperty(dayName)) {
+      console.warn(`Skipping unknown day: ${dayName}`);
+      continue;
+    }
+
+    // Parse each period
+    for (let p = 1; p < subjectRow.length && p <= periods.length; p++) {
+      const subject = subjectRow[p];
+      const teacher = teacherRow[p];
+      const room = roomRow[p];
+      const time = periods[p - 1];
+
+      if (!subject || !time) continue;
+
+      // Check if it's lunch/break
+      if (subject.toUpperCase() === 'LUNCH' || subject.toUpperCase() === 'BREAK') {
+        weekSchedule[dayName].push({
+          period: p,
+          time: time,
+          type: 'lunch',
+          subject: subject,
+          isGroupSplit: false,
+        });
+        continue;
+      }
+
+      // Check if it's library
+      if (subject.toUpperCase() === 'LIB' || subject.toUpperCase() === 'LIBRARY') {
+        weekSchedule[dayName].push({
+          period: p,
+          time: time,
+          type: 'library',
+          subject: 'Library',
+          teacherId: teacher || null,
+          room: room || null,
+          isGroupSplit: false,
+        });
+        continue;
+      }
+
+      // Check if it's mentorship
+      if (subject.toUpperCase() === 'MENTORSHIP') {
+        weekSchedule[dayName].push({
+          period: p,
+          time: time,
+          type: 'mentorship',
+          subject: 'Mentorship',
+          teacherId: teacher || null,
+          room: room || null,
+          isGroupSplit: false,
+        });
+        continue;
+      }
+
+      // Check for seminar
+      if (subject.toUpperCase() === 'SEMINAR') {
+        weekSchedule[dayName].push({
+          period: p,
+          time: time,
+          type: 'seminar',
+          subject: 'Seminar',
+          teacherId: teacher || null,
+          room: room || null,
+          isGroupSplit: false,
+        });
+        continue;
+      }
+
+      // Check for group splits - MORE FLEXIBLE REGEX
+      // Matches patterns like:
+      // - "AIML353 (G1) / AIML351 (G2)"
+      // - "AIML353 (G2) / AIML351 (G1)" 
+      // - "AIML353(G1)/AIML351(G2)" (without spaces)
+      const groupMatch = subject.match(/^(.+?)\s*\(G([12])\)\s*\/\s*(.+?)\s*\(G([12])\)$/i);
+
+      if (groupMatch) {
+        // Split period with groups
+        const [, subjectCode1, groupNum1, subjectCode2, groupNum2] = groupMatch;
+        const teachers = teacher ? teacher.split('/').map(t => t.trim()) : [null, null];
+        const rooms = room ? room.split('/').map(r => r.trim()) : [null, null];
+
+        // Determine which subject goes to which group based on the group numbers in the CSV
+        // If first subject is G1, then first teacher/room is for G1
+        // If first subject is G2, then first teacher/room is for G2
+        const isG1First = groupNum1 === '1';
+
+        weekSchedule[dayName].push({
+          period: p,
+          time: time,
+          type: 'lab',
+          isGroupSplit: true,
+          groups: {
+            group1: {
+              subjectCode: isG1First ? subjectCode1.trim() : subjectCode2.trim(),
+              teacherId: isG1First ? (teachers[0] || null) : (teachers[1] || teachers[0] || null),
+              room: isG1First ? (rooms[0] || null) : (rooms[1] || rooms[0] || null),
+            },
+            group2: {
+              subjectCode: isG1First ? subjectCode2.trim() : subjectCode1.trim(),
+              teacherId: isG1First ? (teachers[1] || teachers[0] || null) : (teachers[0] || null),
+              room: isG1First ? (rooms[1] || rooms[0] || null) : (rooms[0] || null),
+            },
+          },
+        });
+      } else {
+        // Check if subject code contains (G1) or (G2) without the split pattern
+        // This handles cases like "AIML355 (G2)" - single group lab session
+        const singleGroupMatch = subject.match(/^(.+?)\s*\(G([12])\)$/i);
+
+        if (singleGroupMatch) {
+          const [, subjectCode, groupNum] = singleGroupMatch;
+
+          weekSchedule[dayName].push({
+            period: p,
+            time: time,
+            type: 'lab',
+            subjectCode: subjectCode.trim(),
+            teacherId: teacher || null,
+            room: room || null,
+            isGroupSplit: false,
+            groupNumber: parseInt(groupNum), // Track which group this is for
+          });
+        } else {
+          // Regular period
+          weekSchedule[dayName].push({
+            period: p,
+            time: time,
+            type: 'class',
+            subjectCode: subject,
+            teacherId: teacher || null,
+            room: room || null,
+            isGroupSplit: false,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    department,
+    branch: department,
+    section,
+    semester: parseInt(semester),
+    classId,
+    weekSchedule,
+  };
+};
+
+/**
+ * Map teacher names to UIDs from database
+ * @param {Object} timetableData - Parsed timetable data
+ * @param {Array} faculties - Array of faculty documents from DB
+ * @returns {Object} Timetable with teacher UIDs mapped
+ */
+export const mapTeacherNamesToUIDs = (timetableData, faculties) => {
+  // Create name to UID mapping
+  const nameToUID = {};
+  for (const faculty of faculties) {
+    const normalizedName = faculty.name.toLowerCase().trim();
+    nameToUID[normalizedName] = faculty.uid;
+  }
+
+  const mappedSchedule = {};
+
+  for (const [day, periods] of Object.entries(timetableData.weekSchedule)) {
+    mappedSchedule[day] = periods.map(period => {
+      if (period.type === 'break') return period;
+
+      if (period.isGroupSplit) {
+        return {
+          ...period,
+          groups: {
+            group1: {
+              ...period.groups.group1,
+              teacherId: period.groups.group1.teacherId
+                ? nameToUID[period.groups.group1.teacherId.toLowerCase()] || period.groups.group1.teacherId
+                : null,
+            },
+            group2: {
+              ...period.groups.group2,
+              teacherId: period.groups.group2.teacherId
+                ? nameToUID[period.groups.group2.teacherId.toLowerCase()] || period.groups.group2.teacherId
+                : null,
+            },
+          },
+        };
+      }
+
+      return {
+        ...period,
+        teacherId: period.teacherId
+          ? nameToUID[period.teacherId.toLowerCase()] || period.teacherId
+          : null,
+      };
+    });
+  }
+
+  return {
+    ...timetableData,
+    weekSchedule: mappedSchedule,
+  };
+};
+
+// ==================== SCHEDULE QUERIES ====================
 
 /**
  * Get the current day name in lowercase
@@ -179,6 +438,32 @@ export const getStudentSchedule = (classId, section, date, timetables, studentGr
 };
 
 /**
+ * Get upcoming periods for a teacher
+ * @param {string} teacherId - Teacher ID
+ * @param {Date} date - Current date
+ * @param {string} currentTime - Current time in HH:MM format
+ * @param {Array} timetables - Array of all timetables
+ * @returns {Array} Array of upcoming periods today
+ */
+export const getUpcomingPeriods = (teacherId, date, currentTime, timetables) => {
+  const daySchedule = getTeacherSchedule(teacherId, date, timetables);
+  const [currentHour, currentMinute] = currentTime.split(":").map(Number);
+  const currentMinutes = currentHour * 60 + currentMinute;
+
+  return daySchedule.filter((period) => {
+    if (!period.time) return false;
+
+    const timeMatch = period.time.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
+    if (!timeMatch) return false;
+
+    const startMinutes = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+    return startMinutes > currentMinutes;
+  });
+};
+
+// ==================== VALIDATION ====================
+
+/**
  * Validate timetable for conflicts
  * @param {Object} timetable - Timetable to validate
  * @param {Array} existingTimetables - Array of existing timetables
@@ -262,6 +547,23 @@ export const validateTimetableConflicts = (timetable, existingTimetables = []) =
 };
 
 /**
+ * Check if a date is within timetable validity period
+ * @param {Date} date - Date to check
+ * @param {Date} validFrom - Valid from date
+ * @param {Date} validUntil - Valid until date
+ * @returns {boolean} True if date is within period
+ */
+export const isDateInValidityPeriod = (date, validFrom, validUntil) => {
+  const checkDate = new Date(date);
+  const fromDate = new Date(validFrom);
+  const untilDate = new Date(validUntil);
+
+  return checkDate >= fromDate && checkDate <= untilDate;
+};
+
+// ==================== HELPER FUNCTIONS ====================
+
+/**
  * Resolve group assignment for a student
  * @param {string} studentId - Student ID
  * @param {number} enrollmentNo - Student enrollment number
@@ -306,45 +608,6 @@ export const generateSessionId = (classId, date, period, groupNumber = null) => 
   const dateStr = date.toISOString().split("T")[0];
   const groupSuffix = groupNumber ? `-G${groupNumber}` : "";
   return `${classId}-${dateStr}-P${period}${groupSuffix}`;
-};
-
-/**
- * Check if a date is within timetable validity period
- * @param {Date} date - Date to check
- * @param {Date} validFrom - Valid from date
- * @param {Date} validUntil - Valid until date
- * @returns {boolean} True if date is within period
- */
-export const isDateInValidityPeriod = (date, validFrom, validUntil) => {
-  const checkDate = new Date(date);
-  const fromDate = new Date(validFrom);
-  const untilDate = new Date(validUntil);
-
-  return checkDate >= fromDate && checkDate <= untilDate;
-};
-
-/**
- * Get upcoming periods for a teacher
- * @param {string} teacherId - Teacher ID
- * @param {Date} date - Current date
- * @param {string} currentTime - Current time in HH:MM format
- * @param {Array} timetables - Array of all timetables
- * @returns {Array} Array of upcoming periods today
- */
-export const getUpcomingPeriods = (teacherId, date, currentTime, timetables) => {
-  const daySchedule = getTeacherSchedule(teacherId, date, timetables);
-  const [currentHour, currentMinute] = currentTime.split(":").map(Number);
-  const currentMinutes = currentHour * 60 + currentMinute;
-
-  return daySchedule.filter((period) => {
-    if (!period.time) return false;
-
-    const timeMatch = period.time.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
-    if (!timeMatch) return false;
-
-    const startMinutes = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
-    return startMinutes > currentMinutes;
-  });
 };
 
 /**

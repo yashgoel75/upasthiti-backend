@@ -5,8 +5,9 @@ import {
   getStudentSchedule,
   calculateAttendancePercentage,
 } from "../utils/timetable.utils.js";
+import connectDB from "../db/index.js";
 
-const db = await getDB(DB_NAME);
+await connectDB();
 
 const getStudent = async (req, res) => {
     try {
