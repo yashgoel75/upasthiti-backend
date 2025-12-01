@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { config as configDotenv } from "dotenv";
+import { DB_NAME } from "../constant.js";
 
 configDotenv({ path: ".env" });
 
@@ -10,7 +11,7 @@ if (typeof window !== "undefined") {
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
-    throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
+    throw new Error("Please define the MONGODB_URI environment variable inside .env");
 }
 
 let cached = global.mongoose || (global.mongoose = { conn: null, promise: null });
@@ -24,10 +25,11 @@ async function dbConnect() {
     if (!cached.promise) {
         const opts = {
             bufferCommands: false,
+            dbName: DB_NAME, // Add this line
         };
         console.log("Creating new DB connection");
         cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongooseInstance) => {
-            console.log("Db connected");
+            console.log("DB connected to:", mongooseInstance.connection.db.databaseName);
             return mongooseInstance;
         });
     }
@@ -42,9 +44,9 @@ async function dbConnect() {
     return cached.conn;
 }
 
-async function getDB(dbName) {
+async function connectDB() {
     await dbConnect();
-    return mongoose.connection.getClient().db(dbName);
+    return mongoose.connection.db; // Changed this line
 }
 
-export default getDB;
+export default connectDB; // Export dbConnect instead; 

@@ -1,5 +1,15 @@
 import { Router } from "express";
-import { getAdminInfo, updateProfile, addFaculties, addStudents } from "../controllers/admin.controller.js";
+import { 
+    getAdminInfo, 
+    updateProfile, 
+    addFaculties, 
+    addStudents,
+    uploadTimetable,
+    getTimetables,
+    getTimetableById,
+    updateTimetable,
+    deleteTimetable,
+} from "../controllers/admin.controller.js";
 import multer from "multer";
 
 const router = Router();
@@ -22,5 +32,12 @@ router.route('/').get(getAdminInfo);
 router.route('/update').patch(updateProfile);
 router.route('/faculties/upload').post(upload.single('csvFile'), addFaculties);
 router.route('/students/upload').post(upload.single('csvFile'), addStudents);
+
+// Timetable routes
+router.route('/timetables/upload').post(upload.single('csvFile'), uploadTimetable);
+router.route('/timetables').get(getTimetables);
+router.route('/timetables/:id').get(getTimetableById);
+router.route('/timetables/:id').put(updateTimetable);
+router.route('/timetables/:id').delete(deleteTimetable);
 
 export default router;

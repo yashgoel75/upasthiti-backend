@@ -134,6 +134,173 @@ const AttendanceSchema = new mongoose.Schema({
   section: { type: String, required: true },
   semesters: [SemesterAttendanceSchema],
 });
+// ----------------------------------------------
+// Group Split Schema for Lab Sessions
+const GroupSplitSchema = new mongoose.Schema({
+  group1: {
+    subject: String,
+    subjectCode: String,
+    teacherId: String,
+    room: String,
+  },
+  group2: {
+    subject: String,
+    subjectCode: String,
+    teacherId: String,
+    room: String,
+  },
+});
+
+// Period Schema for Timetable
+const PeriodSchema = new mongoose.Schema({
+  period: { type: Number, required: true },
+  time: String,
+  subjectCode: String,
+  subjectName: String,
+  subject: String, // For non-standard entries like "Seminar", "Mentorship"
+  teacherId: String,
+  room: String,
+  type: {
+    type: String,
+    enum: ["theory", "lab", "lunch", "library", "seminar", "mentorship", "other"],
+  },
+  isGroupSplit: { type: Boolean, default: false },
+  groups: GroupSplitSchema,
+});
+
+// Week Schedule Schema
+const WeekScheduleSchema = new mongoose.Schema({
+  monday: [PeriodSchema],
+  tuesday: [PeriodSchema],
+  wednesday: [PeriodSchema],
+  thursday: [PeriodSchema],
+  friday: [PeriodSchema],
+  saturday: [PeriodSchema],
+});
+
+// Timetable Schema
+const TimetableSchema = new mongoose.Schema(
+  {
+    department: { type: String, required: true },
+    section: { type: String, required: true },
+    semester: { type: Number, required: true },
+    validFrom: { type: Date, required: true },
+    validUntil: { type: Date, required: true },
+    weekSchedule: { type: WeekScheduleSchema, required: true },
+    isActive: { type: Boolean, default: true },
+    classId: String, // Reference to Class
+    branch: String, // Alias for department for consistency
+  },
+  { timestamps: true }
+);
+
+// Index for quick timetable lookups
+TimetableSchema.index({ department: 1, section: 1, semester: 1, validFrom: 1 });
+TimetableSchema.index({ classId: 1, isActive: 1 });
+
+// Student Group Assignment Schema (for lab splits)
+const StudentGroupSchema = new mongoose.Schema({
+  studentId: { type: String, required: true },
+  classId: { type: String, required: true },
+  groupNumber: { type: Number, enum: [1, 2], required: true }, // G1 or G2
+  assignmentType: {
+    type: String,
+    enum: ["manual", "auto-even-odd", "auto-alphabetical"],
+    default: "auto-even-odd",
+  },
+});
+
+StudentGroupSchema.index({ studentId: 1, classId: 1 });
+
+// Attendance Session Schema (for live/completed sessions)
+const AttendanceSessionSchema = new mongoose.Schema(
+  {
+    sessionId: { type: String, required: true, unique: true },
+    date: { type: Date, required: true },
+    dayOfWeek: {
+      type: String,
+      enum: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
+      required: true,
+    },
+    period: { type: Number, required: true },
+    time: String,
+    
+    // Class Information
+    classId: { type: String, required: true },
+    department: { type: String, required: true },
+    branch: String,
+    section: { type: String, required: true },
+    semester: { type: Number, required: true },
+    
+    // Subject and Teacher
+    subjectCode: String,
+    subjectName: String,
+    subject: String,
+    teacherId: { type: String, required: true },
+    teacherName: String,
+    
+    // Session Details
+    room: String,
+    sessionType: {
+      type: String,
+      enum: ["theory", "lab", "seminar", "mentorship", "other"],
+    },
+    
+    // Group Split for Labs
+    isGroupSplit: { type: Boolean, default: false },
+    groupNumber: { type: Number, enum: [1, 2] }, // Which group (G1 or G2) if split
+    
+    // Status
+    status: {
+      type: String,
+      enum: ["scheduled", "ongoing", "completed", "cancelled"],
+      default: "scheduled",
+    },
+    
+    // Timestamps
+    startedAt: Date,
+    endedAt: Date,
+    
+    // Attendance Records
+    attendanceRecords: [
+      {
+        studentId: { type: String, required: true },
+        studentName: String,
+        enrollmentNo: Number,
+        status: {
+          type: String,
+          enum: ["Present", "Absent", "Leave"],
+          required: true,
+        },
+        markedAt: Date,
+        markedBy: String, // teacherId who marked
+        location: {
+          latitude: Number,
+          longitude: Number,
+        },
+        remarks: String,
+      },
+    ],
+    
+    // Statistics
+    totalStudents: Number,
+    presentCount: Number,
+    absentCount: Number,
+    leaveCount: Number,
+    
+    // Metadata
+    isSubstitution: { type: Boolean, default: false },
+    originalTeacherId: String,
+    remarks: String,
+  },
+  { timestamps: true }
+);
+
+// Indexes for attendance sessions
+AttendanceSessionSchema.index({ classId: 1, date: 1, period: 1 });
+AttendanceSessionSchema.index({ teacherId: 1, date: 1 });
+AttendanceSessionSchema.index({ sessionId: 1 });
+AttendanceSessionSchema.index({ status: 1, date: 1 });
 
 export const Subject =
   mongoose.models.Subject || mongoose.model("Subject", SubjectSchema);
@@ -151,3 +318,10 @@ export const Department =
   mongoose.models.Department || mongoose.model("Department", DepartmentSchema);
 export const Attendance =
   mongoose.models.Attendance || mongoose.model("Attendance", AttendanceSchema);
+export const Timetable =
+  mongoose.models.Timetable || mongoose.model("Timetable", TimetableSchema);
+export const StudentGroup =
+  mongoose.models.StudentGroup || mongoose.model("StudentGroup", StudentGroupSchema);
+export const AttendanceSession =
+  mongoose.models.AttendanceSession ||
+  mongoose.model("AttendanceSession", AttendanceSessionSchema);
