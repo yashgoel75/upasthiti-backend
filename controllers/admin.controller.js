@@ -6,8 +6,10 @@ import {
   parseTimetableCSV,
   mapTeacherNamesToUIDs
 } from "../utils/timetable.utils.js";
+import { Admin } from "../models/admin.model.js";
 import { Faculty } from "../models/faculty.model.js";
 import { Student } from "../models/student.model.js";
+import { School } from "../models/school.model.js";
 import { Subject } from "../models/subject.model.js";
 import connectDB from "../db/index.js";
 import { Timetable } from "../models/timetable.model.js";
@@ -27,13 +29,13 @@ const getAdminInfo = async (req, res) => {
       });
     }
 
-    const result = await db.collection("admin").find({ uid }).toArray();
+    const result = await Admin.find({ uid });
 
     const updatedResult = await Promise.all(
       result.map(async (admin) => {
         if (admin.schoolId) {
           // Fetch school details using schoolid
-          const school = await db.collection("schools").findOne({
+          const school = await School.findOne({
             id: admin.schoolId,
           });
 
@@ -74,9 +76,7 @@ const updateProfile = async (req, res) => {
       return res.status(400).json({ error: "Missing uid or updates" });
     }
 
-    const result = await db
-      .collection("admin")
-      .findOneAndUpdate(
+    const result = await Admin.findOneAndUpdate(
         { uid: uid },
         { $set: updates },
         { returnDocument: "after" }
