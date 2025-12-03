@@ -29,7 +29,7 @@ const getAdminInfo = async (req, res) => {
       });
     }
 
-    const result = await Admin.find({ uid }).toArray();
+    const result = await Admin.find({ uid });
 
     const updatedResult = await Promise.all(
       result.map(async (admin) => {
