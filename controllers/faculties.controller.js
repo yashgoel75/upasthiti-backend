@@ -47,7 +47,7 @@ const getFaculties = async (req, res) => {
             {},
             {
                 projection: {
-                    name: 1, email: 1, schoolId: 1, type: 1, _id: 0
+                    name: 1, email: 1, schoolId: 1, type: 1
                 }
             }
         );
