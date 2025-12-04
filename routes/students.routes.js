@@ -4,13 +4,15 @@ import {
     getMyAttendance,
     getSubjectAttendance,
     getSemesterReport,
-    getStudentScheduleForDate
+    getStudentScheduleForDate,
+    getAllStudent
 } from "../controllers/students.controller.js";
 
 const router = Router();
 
 // Student info routes
 router.route("/").get(getStudent);
+router.route("/all").get(getAllStudent);
 
 // Attendance routes
 router.get("/attendance/me", getMyAttendance);
