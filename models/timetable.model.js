@@ -55,6 +55,8 @@ const WeekScheduleSchema = new mongoose.Schema({
   wednesday: [PeriodSchema],
   thursday: [PeriodSchema],
   friday: [PeriodSchema],
+  saturday: [PeriodSchema],
+  sunday: [PeriodSchema],
 }, { _id: false });
 
 // Timetable Schema

@@ -1,13 +1,30 @@
-import { DB_NAME } from "../constant.js";
-import getDB from "../db/index.js";
 import {
-  getDayName,
-  getStudentSchedule,
-  calculateAttendancePercentage,
+    getDayName,
+    getStudentSchedule,
+    calculateAttendancePercentage,
 } from "../utils/timetable.utils.js";
 import connectDB from "../db/index.js";
+import { Student } from "../models/student.model.js";
 
 await connectDB();
+
+const getAllStudent = async (req, res) => {
+    try {
+        const result = await Student.find({}).select("name enrollmentNo phone branch batchEnd");
+        res.json({
+            success: true,
+            count: result.length,
+            data: result,
+        });
+
+    } catch (error) {
+        console.error("Student API error:", error);
+        res.status(500).json({
+            error: "Internal server error",
+            message: error.message,
+        });
+    }
+}
 
 const getStudent = async (req, res) => {
     try {
@@ -467,4 +484,4 @@ const getStudentScheduleForDate = async (req, res) => {
     }
 };
 
-export { getStudent, getMyAttendance, getSubjectAttendance, getSemesterReport, getStudentScheduleForDate };
+export { getStudent, getAllStudent, getMyAttendance, getSubjectAttendance, getSemesterReport, getStudentScheduleForDate };
