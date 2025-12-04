@@ -43,14 +43,7 @@ const getFaculty = async (req, res) => {
 
 const getFaculties = async (req, res) => {
     try {
-        const result = await Faculty.find(
-            {},
-            {
-                projection: {
-                    name: 1, email: 1, schoolId: 1, type: 1
-                }
-            }
-        );
+        const result = await Faculty.find({}).select("name email schoolId type");
 
         res.json({
             success: true,
