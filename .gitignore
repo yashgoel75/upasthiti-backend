@@ -22,3 +22,4 @@ build/
 firebase-service-account.json
 test.*
 test-*
+test2*

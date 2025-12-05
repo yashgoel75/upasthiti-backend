@@ -4,7 +4,7 @@ import admin from "../utils/firebase-admin.js";
 import {
   validateTimetableConflicts,
   parseTimetableCSV,
-  mapTeacherNamesToUIDs
+  mapFacultyNamesToUIDs
 } from "../utils/timetable.utils.js";
 import { Admin } from "../models/admin.model.js";
 import { Faculty } from "../models/faculty.model.js";
@@ -77,10 +77,10 @@ const updateProfile = async (req, res) => {
     }
 
     const result = await Admin.findOneAndUpdate(
-        { uid: uid },
-        { $set: updates },
-        { returnDocument: "after" }
-      );
+      { uid: uid },
+      { $set: updates },
+      { returnDocument: "after" }
+    );
 
     console.log(result);
 
@@ -305,6 +305,7 @@ const addStudents = async (req, res) => {
           semester: rec.semester,
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
+          groupNumber: rec.groupNumber,
         };
 
         // Insert into MongoDB
@@ -327,6 +328,7 @@ const addStudents = async (req, res) => {
           semester: rec.semester,
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
+          groupNumber: rec.groupNumber,
         });
       } catch (error) {
         errors.push({
@@ -459,11 +461,11 @@ const getSubjects = async (req, res) => {
     const { code, search } = req.query;
 
     const filter = {};
-    
+
     if (code) {
       filter.code = code.toUpperCase();
     }
-    
+
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -600,9 +602,8 @@ const uploadTimetable = async (req, res) => {
     faculties.forEach(faculty => {
       if (faculty.facultyId) {
         facultyIdToUidMap[faculty.facultyId.trim().toUpperCase()] = {
-          uid: faculty.uid,
+          uid: faculty.facultyId,
           name: faculty.name,
-          email: faculty.email
         };
       }
     });
@@ -679,50 +680,47 @@ const uploadTimetable = async (req, res) => {
           }
 
           // Handle group 1 faculty
-          if (period.groups.group1 && period.groups.group1.teacherId) {
-            const facultyIdUpper = period.groups.group1.teacherId.trim().toUpperCase();
+          if (period.groups.group1 && period.groups.group1.facultyId) {
+            const facultyIdUpper = period.groups.group1.facultyId.trim().toUpperCase();
             const facultyInfo = facultyIdToUidMap[facultyIdUpper];
 
             if (facultyInfo) {
-              period.groups.group1.teacherUid = facultyInfo.uid;
-              period.groups.group1.teacherName = facultyInfo.name;
-              period.groups.group1.teacherEmail = facultyInfo.email;
-              console.log(`[Admin API] Mapped faculty (Group 1): ${period.groups.group1.teacherId} -> ${facultyInfo.name}`);
+              period.groups.group1.facultyId = facultyInfo.uid;
+              period.groups.group1.facultyName = facultyInfo.name;
+              console.log(`[Admin API] Mapped faculty (Group 1): ${period.groups.group1.facultyId} -> ${facultyInfo.name}`);
             } else {
-              unmappedFacultyIds.push(period.groups.group1.teacherId);
-              console.warn(`[Admin API] Unmapped faculty (Group 1): ${period.groups.group1.teacherId}`);
+              unmappedFacultyIds.push(period.groups.group1.facultyId);
+              console.warn(`[Admin API] Unmapped faculty (Group 1): ${period.groups.group1.facultyId}`);
             }
           }
 
           // Handle group 2 faculty
-          if (period.groups.group2 && period.groups.group2.teacherId) {
-            const facultyIdUpper = period.groups.group2.teacherId.trim().toUpperCase();
+          if (period.groups.group2 && period.groups.group2.facultyId) {
+            const facultyIdUpper = period.groups.group2.facultyId.trim().toUpperCase();
             const facultyInfo = facultyIdToUidMap[facultyIdUpper];
 
             if (facultyInfo) {
-              period.groups.group2.teacherUid = facultyInfo.uid;
-              period.groups.group2.teacherName = facultyInfo.name;
-              period.groups.group2.teacherEmail = facultyInfo.email;
+              period.groups.group2.facultyId = facultyInfo.uid;
+              period.groups.group2.facultyName = facultyInfo.name;
               console.log(`[Admin API] Mapped faculty (Group 2): ${period.groups.group2.teacherId} -> ${facultyInfo.name}`);
             } else {
-              unmappedFacultyIds.push(period.groups.group2.teacherId);
+              unmappedFacultyIds.push(period.groups.group2.facultyId);
               console.warn(`[Admin API] Unmapped faculty (Group 2): ${period.groups.group2.teacherId}`);
             }
           }
         } else {
           // Handle single teacher (regular or single-group lab)
-          if (period.teacherId) {
-            const facultyIdUpper = period.teacherId.trim().toUpperCase();
+          if (period.facultyId) {
+            const facultyIdUpper = period.facultyId.trim().toUpperCase();
             const facultyInfo = facultyIdToUidMap[facultyIdUpper];
 
             if (facultyInfo) {
-              period.teacherUid = facultyInfo.uid;
-              period.teacherName = facultyInfo.name;
-              period.teacherEmail = facultyInfo.email;
-              console.log(`[Admin API] Mapped faculty: ${period.teacherId} -> ${facultyInfo.name}`);
+              period.facultyId = facultyInfo.uid;
+              period.facultyName = facultyInfo.name;
+              console.log(`[Admin API] Mapped faculty: ${period.facultyId} -> ${facultyInfo.name}`);
             } else {
-              unmappedFacultyIds.push(period.teacherId);
-              console.warn(`[Admin API] Unmapped faculty: ${period.teacherId}`);
+              unmappedFacultyIds.push(period.facultyId);
+              console.warn(`[Admin API] Unmapped faculty: ${period.facultyId}`);
             }
           }
         }
@@ -778,7 +776,7 @@ const uploadTimetable = async (req, res) => {
       timetableId: result._id,
       data: {
         classId: timetableData.classId,
-        department: timetableData.department,
+        branch: timetableData.branch,
         section: timetableData.section,
         semester: timetableData.semester,
         validFrom: timetableData.validFrom,
@@ -804,10 +802,10 @@ const uploadTimetable = async (req, res) => {
 
 const getTimetables = async (req, res) => {
   try {
-    const { department, section, semester, isActive, classId } = req.query;
+    const { branch, section, semester, isActive, classId } = req.query;
 
     const filter = {};
-    if (department) filter.department = department;
+    if (branch) filter.branch = branch;
     if (section) filter.section = section;
     if (semester) filter.semester = parseInt(semester);
     if (isActive !== undefined) filter.isActive = isActive === "true";

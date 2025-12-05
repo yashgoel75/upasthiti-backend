@@ -19,7 +19,7 @@ router.get("/single", getFaculty);
 // Attendance session routes
 router.post("/attendance/start", startAttendanceSession);
 router.post("/attendance/mark", markAttendance);
-router.post("/attendance/mark-bulk", markBulkAttendance);
+// router.post("/attendance/mark-bulk", markBulkAttendance);
 router.post("/attendance/end", endAttendanceSession);
 router.get("/attendance/sessions", getSessionHistory);
 
