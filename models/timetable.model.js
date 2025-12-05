@@ -3,23 +3,17 @@ import mongoose from "mongoose";
 // Group Split Schema for Lab Sessions
 const GroupSplitSchema = new mongoose.Schema({
   group1: {
-    subject: String,
     subjectCode: String,
     subjectName: String,
-    teacherId: String,
-    teacherUid: String,
-    teacherName: String,
-    teacherEmail: String,
+    facultyId: String,
+    facultyName: String,
     room: String,
   },
   group2: {
-    subject: String,
     subjectCode: String,
     subjectName: String,
-    teacherId: String,
-    teacherUid: String,
-    teacherName: String,
-    teacherEmail: String,
+    facultyId: String,
+    facultyName: String,
     room: String,
   },
 }, { _id: false });
@@ -30,13 +24,8 @@ const PeriodSchema = new mongoose.Schema({
   time: String,
   subjectCode: String,
   subjectName: String,
-  subjectId: String,
-  subjectCredits: Number,
-  subject: String, // For non-standard entries like "Seminar", "Mentorship"
-  teacherId: String,
-  teacherUid: String,
-  teacherName: String,
-  teacherEmail: String,
+  facultyId: String,
+  facultyName: String,
   room: String,
   type: {
     type: String,
@@ -62,21 +51,20 @@ const WeekScheduleSchema = new mongoose.Schema({
 // Timetable Schema
 const TimetableSchema = new mongoose.Schema(
   {
-    department: { type: String, required: true },
+    branch: { type: String, required: true }, 
     section: { type: String, required: true },
     semester: { type: Number, required: true },
+    isActive: { type: Boolean, default: true },
     validFrom: { type: Date, required: true },
     validUntil: { type: Date, required: true },
     weekSchedule: { type: WeekScheduleSchema, required: true },
-    isActive: { type: Boolean, default: true },
     classId: { type: String, required: true }, // e.g., "AIML-A"
-    branch: String, // Alias for department for consistency
   },
   { timestamps: true }
 );
 
 // Indexes for quick timetable lookups
-TimetableSchema.index({ department: 1, section: 1, semester: 1, validFrom: 1 });
+TimetableSchema.index({ branch: 1, section: 1, semester: 1, validFrom: 1 });
 TimetableSchema.index({ classId: 1, isActive: 1 });
 TimetableSchema.index({ validFrom: 1, validUntil: 1 });
 

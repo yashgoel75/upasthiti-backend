@@ -1,8 +1,7 @@
-
 import {
   getDayName,
   getCurrentPeriod,
-  getTeacherSchedule,
+  getFacultySchedule,
   generateSessionId,
   isDateInValidityPeriod,
   resolveGroupAssignment,
@@ -12,51 +11,52 @@ import connectDB from "../db/index.js";
 import { Faculty } from "../models/faculty.model.js";
 import { Timetable } from "../models/timetable.model.js";
 import { Student } from "../models/student.model.js";
+import { AttendanceSession } from "../models/attendanceSession.model.js";
 
 await connectDB();
 
 const getFaculty = async (req, res) => {
-    try {
-        const { uid } = req.query;
+  try {
+    const { uid } = req.query;
 
-        if (!uid) {
-            return res.status(400).json({
-                error: "Missing required query parameter: uid",
-            });
-        }
-
-        const result = await Faculty.find({ uid });
-
-        res.json({
-            success: true,
-            count: result.length,
-            data: result,
-        });
-    } catch (error) {
-        console.error("Faculty API error:", error);
-        res.status(500).json({
-            error: "Internal server error",
-            message: error.message,
-        });
+    if (!uid) {
+      return res.status(400).json({
+        error: "Missing required query parameter: uid",
+      });
     }
+
+    const result = await Faculty.find({ uid });
+
+    res.json({
+      success: true,
+      count: result.length,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Faculty API error:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
 };
 
 const getFaculties = async (req, res) => {
-    try {
-        const result = await Faculty.find({}).select("facultyId name officialEmail schoolId departmentId type");
+  try {
+    const result = await Faculty.find({}).select("facultyId name officialEmail schoolId departmentId type");
 
-        res.json({
-            success: true,
-            count: result.length,
-            data: result,
-        });
-    } catch (error) {
-        console.error("Faculty API error:", error);
-        res.status(500).json({
-            error: "Internal server error",
-            message: error.message,
-        });
-    }
+    res.json({
+      success: true,
+      count: result.length,
+      data: result,
+    });
+  } catch (error) {
+    console.error("Faculty API error:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
 };
 
 // ==================== ATTENDANCE SESSION MANAGEMENT ====================
@@ -68,24 +68,23 @@ const getFaculties = async (req, res) => {
 const startAttendanceSession = async (req, res) => {
   try {
     const {
-      teacherId,
-      classId,
-      department,
+      facultyId,
+      branch,
       section,
       semester,
       period,
       subjectCode,
       date,
       isSubstitution,
-      originalTeacherId,
+      oldTeacherId,
       groupNumber,
     } = req.body;
 
     // Validate required fields
-    if (!teacherId || !classId || !department || !section || !semester || !period) {
+    if (!facultyId || !branch || !section || !semester || !period) {
       return res.status(400).json({
         error: "Missing required fields",
-        required: ["teacherId", "classId", "department", "section", "semester", "period"],
+        required: ["facultyId", "branch", "section", "semester", "period"],
       });
     }
 
@@ -94,7 +93,7 @@ const startAttendanceSession = async (req, res) => {
 
     // Get active timetable for this class
     const timetable = await Timetable.findOne({
-      classId,
+      branch,
       section,
       semester,
       isActive: true,
@@ -116,7 +115,7 @@ const startAttendanceSession = async (req, res) => {
       });
     }
 
-    const periodData = daySchedule.find((p) => p.period === period);
+    const periodData = daySchedule.find((p) => Number(p.period) === Number(period));
     if (!periodData) {
       return res.status(404).json({
         error: `Period ${period} not found in timetable`,
@@ -140,16 +139,16 @@ const startAttendanceSession = async (req, res) => {
         });
       }
 
-      authorizedTeacherId = groupData.teacherId;
+      authorizedTeacherId = groupData.facultyId;
       room = groupData.room;
-      subjectName = groupData.subject || groupData.subjectName;
+      subjectName = groupData.subjectName;
       subjectCodeFromTT = groupData.subjectCode;
       sessionType = "lab";
     } else {
-      authorizedTeacherId = periodData.teacherId;
+      authorizedTeacherId = periodData.facultyId;
     }
 
-    if (!isSubstitution && authorizedTeacherId !== teacherId) {
+    if (!isSubstitution && authorizedTeacherId !== facultyId) {
       return res.status(403).json({
         error: "You are not authorized to conduct this session",
         assignedTeacher: authorizedTeacherId,
@@ -157,10 +156,10 @@ const startAttendanceSession = async (req, res) => {
     }
 
     // Generate session ID
-    const sessionId = generateSessionId(classId, sessionDate, period, groupNumber);
+    const sessionId = generateSessionId(branch, sessionDate, period, groupNumber);
 
     // Check if session already exists
-    const existingSession = await db.collection("attendanceSessions").findOne({ sessionId });
+    const existingSession = await AttendanceSession.findOne({ sessionId });
 
     if (existingSession) {
       return res.status(409).json({
@@ -171,62 +170,19 @@ const startAttendanceSession = async (req, res) => {
 
     // Get students for this class
     const studentFilter = {
-      classId,
+      branch,
       section,
-      isActive: true,
     };
 
     // If group split, filter students by group
     if (periodData.isGroupSplit && groupNumber) {
-      const studentGroups = await db
-        .collection("studentGroups")
-        .find({ classId, groupNumber })
-        .toArray();
-
-      const studentIds = studentGroups.map((sg) => sg.studentId);
-
-      if (studentIds.length > 0) {
-        studentFilter.uid = { $in: studentIds };
-      } else {
-        // Auto-assign groups if not already assigned
-        const allStudents = await Student.find({ classId, section });
-
-        for (const student of allStudents) {
-          const assignedGroup = resolveGroupAssignment(
-            student.uid,
-            student.enrollmentNo,
-            "auto-even-odd"
-          );
-
-          await db.collection("studentGroups").updateOne(
-            { studentId: student.uid, classId },
-            {
-              $set: {
-                studentId: student.uid,
-                classId,
-                groupNumber: assignedGroup,
-                assignmentType: "auto-even-odd",
-                updatedAt: new Date(),
-              },
-              $setOnInsert: { createdAt: new Date() },
-            },
-            { upsert: true }
-          );
-        }
-
-        // Re-filter after assignment
-        const updatedGroups = await db
-          .collection("studentGroups")
-          .find({ classId, groupNumber })
-          .toArray();
-        studentFilter.uid = { $in: updatedGroups.map((sg) => sg.studentId) };
-      }
+      studentFilter.groupNumber = groupNumber;
     }
 
-    const students = await Student.find(studentFilter).toArray();
+    const students = await Student.find(studentFilter);
 
     // Get teacher name
-    const teacher = await Faculty.findOne({ uid: teacherId });
+    const teacher = await Faculty.findOne({ facultyId: facultyId });
 
     // Create session
     const session = {
@@ -235,16 +191,13 @@ const startAttendanceSession = async (req, res) => {
       dayOfWeek,
       period,
       time: periodData.time,
-      classId,
-      department,
-      branch: department,
+      branch,
       section,
       semester,
       subjectCode: subjectCode || subjectCodeFromTT,
       subjectName,
-      subject: subjectName,
-      teacherId,
-      teacherName: teacher?.name || "Unknown",
+      facultyId,
+      facultyName: teacher?.name || "",
       room,
       sessionType,
       isGroupSplit: periodData.isGroupSplit || false,
@@ -255,14 +208,13 @@ const startAttendanceSession = async (req, res) => {
       totalStudents: students.length,
       presentCount: 0,
       absentCount: 0,
-      leaveCount: 0,
       isSubstitution: isSubstitution || false,
-      originalTeacherId: originalTeacherId || null,
+      oldTeacherId: oldTeacherId || null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    const result = await db.collection("attendanceSessions").insertOne(session);
+    const result = await AttendanceSession.insertOne(session);
 
     res.status(201).json({
       success: true,
@@ -272,7 +224,7 @@ const startAttendanceSession = async (req, res) => {
         ...session,
         _id: result.insertedId,
         studentList: students.map((s) => ({
-          studentId: s.uid,
+          uid: s.uid,
           name: s.name,
           enrollmentNo: s.enrollmentNo,
         })),
@@ -293,17 +245,17 @@ const startAttendanceSession = async (req, res) => {
  */
 const markAttendance = async (req, res) => {
   try {
-    const { sessionId, attendanceData, teacherId } = req.body;
+    const { sessionId, attendanceData, facultyId } = req.body;
 
-    // attendanceData format: [{ studentId, status, remarks }] or { studentId, status, remarks }
-    if (!sessionId || !attendanceData || !teacherId) {
+    // attendanceData format: [{ uid, status, remarks }] or { uid, status, remarks }
+    if (!sessionId || !attendanceData || !facultyId) {
       return res.status(400).json({
-        error: "Missing required fields: sessionId, attendanceData, teacherId",
+        error: "Missing required fields: sessionId, attendanceData, facultyId",
       });
     }
 
     // Get session
-    const session = await db.collection("attendanceSessions").findOne({ sessionId });
+    const session = await AttendanceSession.findOne({ sessionId });
 
     if (!session) {
       return res.status(404).json({
@@ -318,8 +270,8 @@ const markAttendance = async (req, res) => {
       });
     }
 
-    // Validate teacher
-    if (session.teacherId !== teacherId) {
+    // Validate faculty
+    if (session.facultyId !== facultyId) {
       return res.status(403).json({
         error: "You are not authorized to mark attendance for this session",
       });
@@ -329,44 +281,44 @@ const markAttendance = async (req, res) => {
     const recordsToMark = Array.isArray(attendanceData) ? attendanceData : [attendanceData];
 
     // Validate and prepare records
-    const validStatuses = ["Present", "Absent", "Leave"];
+    const validStatuses = ["Present", "Absent"];
     const newRecords = [];
 
     for (const record of recordsToMark) {
-      if (!record.studentId || !record.status) {
+      if (!record.uid || !record.status) {
         return res.status(400).json({
-          error: "Each record must have studentId and status",
+          error: "Each record must have uid and status",
         });
       }
 
       if (!validStatuses.includes(record.status)) {
         return res.status(400).json({
-          error: `Invalid status: ${record.status}. Must be Present, Absent, or Leave`,
+          error: `Invalid status: ${record.status}. Must be Present, Absent`,
         });
       }
 
       // Check if student already marked
       const alreadyMarked = session.attendanceRecords.find(
-        (r) => r.studentId === record.studentId
+        (r) => r.uid === record.uid
       );
 
       if (alreadyMarked) {
         return res.status(409).json({
-          error: `Student ${record.studentId} already marked`,
+          error: `Student ${record.uid} already marked`,
           existingRecord: alreadyMarked,
         });
       }
 
       // Get student details
-      const student = await db.collection("students").findOne({ uid: record.studentId });
+      const student = await Student.findOne({ uid: record.uid });
 
       newRecords.push({
-        studentId: record.studentId,
+        uid: record.uid,
         studentName: student?.name || "Unknown",
         enrollmentNo: student?.enrollmentNo || null,
         status: record.status,
         markedAt: new Date(),
-        markedBy: teacherId,
+        markedBy: facultyId,
         remarks: record.remarks || null,
       });
     }
@@ -377,16 +329,14 @@ const markAttendance = async (req, res) => {
     // Calculate counts
     const presentCount = updatedRecords.filter((r) => r.status === "Present").length;
     const absentCount = updatedRecords.filter((r) => r.status === "Absent").length;
-    const leaveCount = updatedRecords.filter((r) => r.status === "Leave").length;
 
-    await db.collection("attendanceSessions").updateOne(
+    await AttendanceSession.updateOne(
       { sessionId },
       {
         $set: {
           attendanceRecords: updatedRecords,
           presentCount,
           absentCount,
-          leaveCount,
           updatedAt: new Date(),
         },
       }
@@ -401,7 +351,6 @@ const markAttendance = async (req, res) => {
       statistics: {
         present: presentCount,
         absent: absentCount,
-        leave: leaveCount,
       },
     });
   } catch (error) {
@@ -419,23 +368,23 @@ const markAttendance = async (req, res) => {
  */
 const markBulkAttendance = async (req, res) => {
   try {
-    const { sessionId, status, teacherId, studentIds } = req.body;
+    const { sessionId, status, facultyId, uids } = req.body;
 
-    if (!sessionId || !status || !teacherId) {
+    if (!sessionId || !status || !facultyId) {
       return res.status(400).json({
-        error: "Missing required fields: sessionId, status, teacherId",
+        error: "Missing required fields: sessionId, status, facultyId",
       });
     }
 
-    const validStatuses = ["Present", "Absent", "Leave"];
+    const validStatuses = ["Present", "Absent"];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
-        error: `Invalid status: ${status}. Must be Present, Absent, or Leave`,
+        error: `Invalid status: ${status}. Must be Present or Absent`,
       });
     }
 
     // Get session
-    const session = await db.collection("attendanceSessions").findOne({ sessionId });
+    const session = await AttendanceSession.findOne({ sessionId });
 
     if (!session) {
       return res.status(404).json({
@@ -449,51 +398,44 @@ const markBulkAttendance = async (req, res) => {
       });
     }
 
-    if (session.teacherId !== teacherId) {
+    if (session.facultyId !== facultyId) {
       return res.status(403).json({
         error: "You are not authorized to mark attendance for this session",
       });
     }
 
-    // Get students to mark (if studentIds provided, use them; otherwise get all)
+    // Get students to mark (if uids provided, use them; otherwise get all)
     let studentsToMark;
-    if (studentIds && studentIds.length > 0) {
-      studentsToMark = await db
-        .collection("students")
-        .find({ uid: { $in: studentIds } })
-        .toArray();
+    if (uids && uids.length > 0) {
+      studentsToMark = await Student
+        .find({ uid: { $in: uids } });
     } else {
       // Get all students for this class
       const filter = {
-        classId: session.classId,
+        branch: session.branch,
         section: session.section,
-        isActive: true,
       };
 
       // If group split, filter by group
       if (session.isGroupSplit && session.groupNumber) {
-        const studentGroups = await db
-          .collection("studentGroups")
-          .find({ classId: session.classId, groupNumber: session.groupNumber })
-          .toArray();
-        filter.uid = { $in: studentGroups.map((sg) => sg.studentId) };
+        filter.groupNumber = session.groupNumber;
       }
 
-      studentsToMark = await db.collection("students").find(filter).toArray();
+      studentsToMark = await Student.find(filter);
     }
 
     // Filter out already marked students
-    const alreadyMarkedIds = new Set(session.attendanceRecords.map((r) => r.studentId));
+    const alreadyMarkedIds = new Set(session.attendanceRecords.map((r) => r.uid));
     const unmarkedStudents = studentsToMark.filter((s) => !alreadyMarkedIds.has(s.uid));
 
     // Create records
     const newRecords = unmarkedStudents.map((student) => ({
-      studentId: student.uid,
+      uid: student.uid,
       studentName: student.name,
       enrollmentNo: student.enrollmentNo,
       status,
       markedAt: new Date(),
-      markedBy: teacherId,
+      markedBy: facultyId,
     }));
 
     const updatedRecords = [...session.attendanceRecords, ...newRecords];
@@ -501,16 +443,14 @@ const markBulkAttendance = async (req, res) => {
     // Calculate counts
     const presentCount = updatedRecords.filter((r) => r.status === "Present").length;
     const absentCount = updatedRecords.filter((r) => r.status === "Absent").length;
-    const leaveCount = updatedRecords.filter((r) => r.status === "Leave").length;
 
-    await db.collection("attendanceSessions").updateOne(
+    await AttendanceSession.updateOne(
       { sessionId },
       {
         $set: {
           attendanceRecords: updatedRecords,
           presentCount,
           absentCount,
-          leaveCount,
           updatedAt: new Date(),
         },
       }
@@ -525,7 +465,6 @@ const markBulkAttendance = async (req, res) => {
       statistics: {
         present: presentCount,
         absent: absentCount,
-        leave: leaveCount,
       },
     });
   } catch (error) {
@@ -543,15 +482,15 @@ const markBulkAttendance = async (req, res) => {
  */
 const endAttendanceSession = async (req, res) => {
   try {
-    const { sessionId, teacherId, remarks } = req.body;
+    const { sessionId, facultyId, remarks } = req.body;
 
-    if (!sessionId || !teacherId) {
+    if (!sessionId || !facultyId) {
       return res.status(400).json({
-        error: "Missing required fields: sessionId, teacherId",
+        error: "Missing required fields: sessionId, facultyId",
       });
     }
 
-    const session = await db.collection("attendanceSessions").findOne({ sessionId });
+    const session = await AttendanceSession.findOne({ sessionId });
 
     if (!session) {
       return res.status(404).json({
@@ -559,7 +498,7 @@ const endAttendanceSession = async (req, res) => {
       });
     }
 
-    if (session.teacherId !== teacherId) {
+    if (session.facultyId !== facultyId) {
       return res.status(403).json({
         error: "You are not authorized to end this session",
       });
@@ -572,7 +511,7 @@ const endAttendanceSession = async (req, res) => {
       });
     }
 
-    await db.collection("attendanceSessions").updateOne(
+    await AttendanceSession.updateOne(
       { sessionId },
       {
         $set: {
@@ -592,7 +531,6 @@ const endAttendanceSession = async (req, res) => {
         marked: session.attendanceRecords.length,
         present: session.presentCount,
         absent: session.absentCount,
-        leave: session.leaveCount,
         unmarked: session.totalStudents - session.attendanceRecords.length,
       },
     });
@@ -606,20 +544,20 @@ const endAttendanceSession = async (req, res) => {
 };
 
 /**
- * Get session history for a teacher
+ * Get session history for a faculty
  * GET /api/faculty/attendance/sessions
  */
 const getSessionHistory = async (req, res) => {
   try {
-    const { teacherId, status, fromDate, toDate, limit = 50 } = req.query;
+    const { facultyId, status, fromDate, toDate, limit = 50 } = req.query;
 
-    if (!teacherId) {
+    if (!facultyId) {
       return res.status(400).json({
         error: "teacherId is required",
       });
     }
 
-    const filter = { teacherId };
+    const filter = { facultyId };
 
     if (status) {
       filter.status = status;
@@ -631,12 +569,11 @@ const getSessionHistory = async (req, res) => {
       if (toDate) filter.date.$lte = new Date(toDate);
     }
 
-    const sessions = await db
-      .collection("attendanceSessions")
+    const sessions = await AttendanceSession
       .find(filter)
       .sort({ date: -1, period: -1 })
       .limit(parseInt(limit))
-      .toArray();
+      ;
 
     res.json({
       success: true,
@@ -667,12 +604,12 @@ const getTeacherScheduleForDate = async (req, res) => {
     }
 
     let scheduleDate;
-    
+
     if (date) {
       // Try to parse date in multiple formats
       // Supports: YYYY-MM-DD, YYYY/MM/DD, MM-DD-YYYY, MM/DD/YYYY, ISO 8601
       scheduleDate = new Date(date);
-      
+
       // Check if date is invalid
       if (isNaN(scheduleDate.getTime())) {
         return res.status(400).json({
@@ -681,7 +618,7 @@ const getTeacherScheduleForDate = async (req, res) => {
           received: date
         });
       }
-      
+
       // Set time to start of day to avoid timezone issues
       scheduleDate.setHours(0, 0, 0, 0);
     } else {
@@ -697,7 +634,7 @@ const getTeacherScheduleForDate = async (req, res) => {
         validUntil: { $gte: scheduleDate },
       });
 
-    const schedule = getTeacherSchedule(teacherId, scheduleDate, timetables);
+    const schedule = getFacultySchedule(teacherId, scheduleDate, timetables);
 
     res.json({
       success: true,

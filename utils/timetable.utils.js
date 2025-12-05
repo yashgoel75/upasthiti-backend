@@ -11,7 +11,7 @@
  * Row 1: Class header (e.g., "AIML-B 5th Semester"), Period times
  * Following rows: Day, Period data alternating
  * - First row of day: Subject codes (with group info like "AIML353 (G1) / AIML351 (G2)")
- * - Second row of day: Teacher names (separated by / for groups)
+ * - Second row of day: Faculty names (separated by / for groups)
  * - Third row of day: Classroom IDs (separated by / for groups)
  * 
  * @param {string} csvContent - Raw CSV content
@@ -35,8 +35,8 @@ export const parseTimetableCSV = (csvContent) => {
     throw new Error(`Invalid class format: ${classInfo}. Expected format: "DEPT-SECTION NTH Semester"`);
   }
 
-  const [, department, section, semester] = classMatch;
-  const classId = `${department}-${section}`;
+  const [, branch, section, semester] = classMatch;
+  const classId = `${branch}-${section}`;
 
   const weekSchedule = {
     monday: [],
@@ -47,12 +47,12 @@ export const parseTimetableCSV = (csvContent) => {
     saturday: [],
   };
 
-  // Parse day rows (each day has 3 rows: subjects, teachers, rooms)
+  // Parse day rows (each day has 3 rows: subjects, faculties, rooms)
   for (let i = 1; i < lines.length; i += 3) {
     if (i + 2 >= lines.length) break;
 
     const subjectRow = lines[i].split(',').map(col => col.trim());
-    const teacherRow = lines[i + 1].split(',').map(col => col.trim());
+    const facultyRow = lines[i + 1].split(',').map(col => col.trim());
     const roomRow = lines[i + 2].split(',').map(col => col.trim());
 
     const dayName = subjectRow[0].toLowerCase();
@@ -65,7 +65,7 @@ export const parseTimetableCSV = (csvContent) => {
     // Parse each period
     for (let p = 1; p < subjectRow.length && p <= periods.length; p++) {
       const subject = subjectRow[p];
-      const teacher = teacherRow[p];
+      const faculty = facultyRow[p];
       const room = roomRow[p];
       const time = periods[p - 1];
 
@@ -90,7 +90,7 @@ export const parseTimetableCSV = (csvContent) => {
           time: time,
           type: 'library',
           subject: 'Library',
-          teacherId: teacher || null,
+          facultyId: faculty || null,
           room: room || null,
           isGroupSplit: false,
         });
@@ -104,7 +104,7 @@ export const parseTimetableCSV = (csvContent) => {
           time: time,
           type: 'mentorship',
           subject: 'Mentorship',
-          teacherId: teacher || null,
+          facultyId: faculty || null,
           room: room || null,
           isGroupSplit: false,
         });
@@ -118,7 +118,7 @@ export const parseTimetableCSV = (csvContent) => {
           time: time,
           type: 'seminar',
           subject: 'Seminar',
-          teacherId: teacher || null,
+          facultyId: faculty || null,
           room: room || null,
           isGroupSplit: false,
         });
@@ -135,12 +135,12 @@ export const parseTimetableCSV = (csvContent) => {
       if (groupMatch) {
         // Split period with groups
         const [, subjectCode1, groupNum1, subjectCode2, groupNum2] = groupMatch;
-        const teachers = teacher ? teacher.split('/').map(t => t.trim()) : [null, null];
+        const faculties = faculty ? faculty.split('/').map(f => f.trim()) : [null, null];
         const rooms = room ? room.split('/').map(r => r.trim()) : [null, null];
 
         // Determine which subject goes to which group based on the group numbers in the CSV
-        // If first subject is G1, then first teacher/room is for G1
-        // If first subject is G2, then first teacher/room is for G2
+        // If first subject is G1, then first faculty/room is for G1
+        // If first subject is G2, then first faculty/room is for G2
         const isG1First = groupNum1 === '1';
 
         weekSchedule[dayName].push({
@@ -151,12 +151,12 @@ export const parseTimetableCSV = (csvContent) => {
           groups: {
             group1: {
               subjectCode: isG1First ? subjectCode1.trim() : subjectCode2.trim(),
-              teacherId: isG1First ? (teachers[0] || null) : (teachers[1] || teachers[0] || null),
+              facultyId: isG1First ? (faculties[0] || null) : (faculties[1] || faculties[0] || null),
               room: isG1First ? (rooms[0] || null) : (rooms[1] || rooms[0] || null),
             },
             group2: {
               subjectCode: isG1First ? subjectCode2.trim() : subjectCode1.trim(),
-              teacherId: isG1First ? (teachers[1] || teachers[0] || null) : (teachers[0] || null),
+              facultyId: isG1First ? (faculties[1] || faculties[0] || null) : (faculties[0] || null),
               room: isG1First ? (rooms[1] || rooms[0] || null) : (rooms[0] || null),
             },
           },
@@ -174,7 +174,7 @@ export const parseTimetableCSV = (csvContent) => {
             time: time,
             type: 'lab',
             subjectCode: subjectCode.trim(),
-            teacherId: teacher || null,
+            facultyId: faculty || null,
             room: room || null,
             isGroupSplit: false,
             groupNumber: parseInt(groupNum), // Track which group this is for
@@ -186,7 +186,7 @@ export const parseTimetableCSV = (csvContent) => {
             time: time,
             type: 'class',
             subjectCode: subject,
-            teacherId: teacher || null,
+            facultyId: faculty || null,
             room: room || null,
             isGroupSplit: false,
           });
@@ -196,8 +196,7 @@ export const parseTimetableCSV = (csvContent) => {
   }
 
   return {
-    department,
-    branch: department,
+    branch,
     section,
     semester: parseInt(semester),
     classId,
@@ -206,12 +205,12 @@ export const parseTimetableCSV = (csvContent) => {
 };
 
 /**
- * Map teacher names to UIDs from database
+ * Map faculty names to UIDs from database
  * @param {Object} timetableData - Parsed timetable data
  * @param {Array} faculties - Array of faculty documents from DB
- * @returns {Object} Timetable with teacher UIDs mapped
+ * @returns {Object} Timetable with faculty UIDs mapped
  */
-export const mapTeacherNamesToUIDs = (timetableData, faculties) => {
+export const mapFacultyNamesToUIDs = (timetableData, faculties) => {
   // Create name to UID mapping
   const nameToUID = {};
   for (const faculty of faculties) {
@@ -231,14 +230,14 @@ export const mapTeacherNamesToUIDs = (timetableData, faculties) => {
           groups: {
             group1: {
               ...period.groups.group1,
-              teacherId: period.groups.group1.teacherId
-                ? nameToUID[period.groups.group1.teacherId.toLowerCase()] || period.groups.group1.teacherId
+              facultyId: period.groups.group1.facultyId
+                ? nameToUID[period.groups.group1.facultyId.toLowerCase()] || period.groups.group1.facultyId
                 : null,
             },
             group2: {
               ...period.groups.group2,
-              teacherId: period.groups.group2.teacherId
-                ? nameToUID[period.groups.group2.teacherId.toLowerCase()] || period.groups.group2.teacherId
+              facultyId: period.groups.group2.facultyId
+                ? nameToUID[period.groups.group2.facultyId.toLowerCase()] || period.groups.group2.facultyId
                 : null,
             },
           },
@@ -247,8 +246,8 @@ export const mapTeacherNamesToUIDs = (timetableData, faculties) => {
 
       return {
         ...period,
-        teacherId: period.teacherId
-          ? nameToUID[period.teacherId.toLowerCase()] || period.teacherId
+        facultyId: period.facultyId
+          ? nameToUID[period.facultyId.toLowerCase()] || period.facultyId
           : null,
       };
     });
@@ -312,13 +311,13 @@ export const getCurrentPeriod = (timetable, day, currentTime) => {
 };
 
 /**
- * Get teacher's schedule for a specific date
- * @param {string} teacherId - Teacher ID
+ * Get faculty's schedule for a specific date
+ * @param {string} facultyId - Faculty ID (UID)
  * @param {Date} date - Date to get schedule for
  * @param {Array} timetables - Array of all timetables
- * @returns {Array} Array of periods where teacher is scheduled
+ * @returns {Array} Array of periods where faculty is scheduled
  */
-export const getTeacherSchedule = (teacherId, date, timetables) => {
+export const getFacultySchedule = (facultyId, date, timetables) => {
   const dayName = getDayName(date);
   const schedule = [];
 
@@ -337,11 +336,11 @@ export const getTeacherSchedule = (teacherId, date, timetables) => {
 
     for (const period of daySchedule) {
       // Check regular period
-      if (period.teacherId === teacherId) {
+      if (period.facultyId === facultyId) {
         schedule.push({
           ...period,
           timetableInfo: {
-            department: timetable.department,
+            branch: timetable.branch,
             section: timetable.section,
             semester: timetable.semester,
             classId: timetable.classId,
@@ -351,7 +350,7 @@ export const getTeacherSchedule = (teacherId, date, timetables) => {
 
       // Check group splits
       if (period.isGroupSplit && period.groups) {
-        if (period.groups.group1?.teacherId === teacherId) {
+        if (period.groups.group1?.facultyId === facultyId) {
           schedule.push({
             ...period.groups.group1,
             period: period.period,
@@ -359,14 +358,14 @@ export const getTeacherSchedule = (teacherId, date, timetables) => {
             isGroupSplit: true,
             groupNumber: 1,
             timetableInfo: {
-              department: timetable.department,
+              branch: timetable.branch,
               section: timetable.section,
               semester: timetable.semester,
               classId: timetable.classId,
             },
           });
         }
-        if (period.groups.group2?.teacherId === teacherId) {
+        if (period.groups.group2?.facultyId === facultyId) {
           schedule.push({
             ...period.groups.group2,
             period: period.period,
@@ -374,7 +373,7 @@ export const getTeacherSchedule = (teacherId, date, timetables) => {
             isGroupSplit: true,
             groupNumber: 2,
             timetableInfo: {
-              department: timetable.department,
+              branch: timetable.branch,
               section: timetable.section,
               semester: timetable.semester,
               classId: timetable.classId,
@@ -390,14 +389,14 @@ export const getTeacherSchedule = (teacherId, date, timetables) => {
 
 /**
  * Get student's schedule for a specific date
- * @param {string} classId - Class ID
- * @param {string} section - Section
+ * @param {string} branch - Branch (e.g., "AIML")
+ * @param {string} section - Section (e.g., "A")
  * @param {Date} date - Date to get schedule for
  * @param {Array} timetables - Array of all timetables
  * @param {number} studentGroup - Student's group number (1 or 2) for lab splits
  * @returns {Array} Array of periods for the student
  */
-export const getStudentSchedule = (classId, section, date, timetables, studentGroup = null) => {
+export const getStudentSchedule = (branch, section, date, timetables, studentGroup = null) => {
   const dayName = getDayName(date);
   const schedule = [];
 
@@ -406,7 +405,7 @@ export const getStudentSchedule = (classId, section, date, timetables, studentGr
       !timetable.isActive ||
       date < new Date(timetable.validFrom) ||
       date > new Date(timetable.validUntil) ||
-      timetable.classId !== classId ||
+      timetable.branch !== branch ||
       timetable.section !== section
     ) {
       continue;
@@ -438,15 +437,15 @@ export const getStudentSchedule = (classId, section, date, timetables, studentGr
 };
 
 /**
- * Get upcoming periods for a teacher
- * @param {string} teacherId - Teacher ID
+ * Get upcoming periods for a faculty
+ * @param {string} facultyId - Faculty ID (UID)
  * @param {Date} date - Current date
  * @param {string} currentTime - Current time in HH:MM format
  * @param {Array} timetables - Array of all timetables
  * @returns {Array} Array of upcoming periods today
  */
-export const getUpcomingPeriods = (teacherId, date, currentTime, timetables) => {
-  const daySchedule = getTeacherSchedule(teacherId, date, timetables);
+export const getUpcomingPeriods = (facultyId, date, currentTime, timetables) => {
+  const daySchedule = getFacultySchedule(facultyId, date, timetables);
   const [currentHour, currentMinute] = currentTime.split(":").map(Number);
   const currentMinutes = currentHour * 60 + currentMinute;
 
@@ -489,52 +488,52 @@ export const validateTimetableConflicts = (timetable, existingTimetables = []) =
       if (newStart <= existingEnd && newEnd >= existingStart) {
         conflicts.push({
           type: "validity_overlap",
-          message: `Timetable overlaps with existing timetable for ${existing.department} ${existing.section} - Semester ${existing.semester}`,
+          message: `Timetable overlaps with existing timetable for ${existing.branch} ${existing.section} - Semester ${existing.semester}`,
           existingId: existing._id,
         });
       }
     }
   }
 
-  // Check for internal conflicts (same teacher at same time)
-  const teacherSchedule = {};
+  // Check for internal conflicts (same faculty at same time)
+  const facultySchedule = {};
   for (const [day, periods] of Object.entries(timetable.weekSchedule)) {
     for (const period of periods) {
-      if (period.teacherId && period.time) {
-        const key = `${period.teacherId}_${day}_${period.time}`;
-        if (!teacherSchedule[key]) {
-          teacherSchedule[key] = [];
+      if (period.facultyId && period.time) {
+        const key = `${period.facultyId}_${day}_${period.time}`;
+        if (!facultySchedule[key]) {
+          facultySchedule[key] = [];
         }
-        teacherSchedule[key].push({ day, period: period.period, time: period.time });
+        facultySchedule[key].push({ day, period: period.period, time: period.time });
       }
 
       // Check group splits
       if (period.isGroupSplit && period.groups) {
-        if (period.groups.group1?.teacherId && period.time) {
-          const key = `${period.groups.group1.teacherId}_${day}_${period.time}`;
-          if (!teacherSchedule[key]) {
-            teacherSchedule[key] = [];
+        if (period.groups.group1?.facultyId && period.time) {
+          const key = `${period.groups.group1.facultyId}_${day}_${period.time}`;
+          if (!facultySchedule[key]) {
+            facultySchedule[key] = [];
           }
-          teacherSchedule[key].push({ day, period: period.period, time: period.time, group: 1 });
+          facultySchedule[key].push({ day, period: period.period, time: period.time, group: 1 });
         }
-        if (period.groups.group2?.teacherId && period.time) {
-          const key = `${period.groups.group2.teacherId}_${day}_${period.time}`;
-          if (!teacherSchedule[key]) {
-            teacherSchedule[key] = [];
+        if (period.groups.group2?.facultyId && period.time) {
+          const key = `${period.groups.group2.facultyId}_${day}_${period.time}`;
+          if (!facultySchedule[key]) {
+            facultySchedule[key] = [];
           }
-          teacherSchedule[key].push({ day, period: period.period, time: period.time, group: 2 });
+          facultySchedule[key].push({ day, period: period.period, time: period.time, group: 2 });
         }
       }
     }
   }
 
   // Find internal conflicts
-  for (const [key, occurrences] of Object.entries(teacherSchedule)) {
+  for (const [key, occurrences] of Object.entries(facultySchedule)) {
     if (occurrences.length > 1) {
-      const [teacherId, day, time] = key.split("_");
+      const [facultyId, day, time] = key.split("_");
       conflicts.push({
-        type: "internal_teacher_conflict",
-        message: `Teacher ${teacherId} is scheduled at multiple places on ${day} at ${time}`,
+        type: "internal_faculty_conflict",
+        message: `Faculty ${facultyId} is scheduled at multiple places on ${day} at ${time}`,
         occurrences,
       });
     }
@@ -565,14 +564,12 @@ export const isDateInValidityPeriod = (date, validFrom, validUntil) => {
 
 /**
  * Resolve group assignment for a student
- * @param {string} studentId - Student ID
- * @param {number} enrollmentNo - Student enrollment number
+ * @param {string} enrollmentNo - Student enrollment number
  * @param {string} assignmentType - Type of assignment (auto-even-odd, auto-alphabetical, manual)
  * @param {number} manualGroup - Manual group number if assignment type is manual
  * @returns {number} Group number (1 or 2)
  */
 export const resolveGroupAssignment = (
-  studentId,
   enrollmentNo,
   assignmentType = "auto-even-odd",
   manualGroup = null
@@ -585,11 +582,9 @@ export const resolveGroupAssignment = (
     return enrollmentNo % 2 === 0 ? 2 : 1;
   }
 
-  if (assignmentType === "auto-alphabetical" && studentId) {
-    // Use last character of student ID
-    const lastChar = studentId.charAt(studentId.length - 1).toLowerCase();
-    const charCode = lastChar.charCodeAt(0);
-    return charCode % 2 === 0 ? 2 : 1;
+  if (assignmentType === "auto-alphabetical" && enrollmentNo) {
+    // Use enrollment number as fallback for alphabetical
+    return enrollmentNo % 2 === 0 ? 2 : 1;
   }
 
   // Default to group 1
@@ -598,7 +593,7 @@ export const resolveGroupAssignment = (
 
 /**
  * Generate session ID
- * @param {string} classId - Class ID
+ * @param {string} classId - Class ID (e.g., "AIML-A")
  * @param {Date} date - Date of session
  * @param {number} period - Period number
  * @param {number} groupNumber - Group number (optional)

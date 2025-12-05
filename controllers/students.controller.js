@@ -5,6 +5,8 @@ import {
 } from "../utils/timetable.utils.js";
 import connectDB from "../db/index.js";
 import { Student } from "../models/student.model.js";
+import { Timetable } from "../models/timetable.model.js";
+import { AttendanceSession } from "../models/attendanceSession.model.js";
 
 await connectDB();
 
@@ -36,7 +38,7 @@ const getStudent = async (req, res) => {
             });
         }
 
-        const result = await db.collection("students").find({ uid }).toArray()
+        const result = await Student.find({ uid });
         // console.log(result);
         res.json({
             success: true,
@@ -60,9 +62,9 @@ const getStudent = async (req, res) => {
  */
 const getMyAttendance = async (req, res) => {
     try {
-        const { uid, studentId } = req.query;
+        const { uid } = req.query;
 
-        const id = uid || studentId;
+        const id = uid;
 
         if (!id) {
             return res.status(400).json({
@@ -71,7 +73,7 @@ const getMyAttendance = async (req, res) => {
         }
 
         // Get student details
-        const student = await db.collection("students").findOne({ uid: id });
+        const student = await Student.findOne({ uid: id });
 
         if (!student) {
             return res.status(404).json({
@@ -80,16 +82,14 @@ const getMyAttendance = async (req, res) => {
         }
 
         // Get all attendance sessions where student was present
-        const sessions = await db
-            .collection("attendanceSessions")
+        const sessions = await AttendanceSession
             .find({
-                classId: student.classId,
+                branch: student.branch,
                 section: student.section,
                 status: "completed",
-                "attendanceRecords.studentId": id,
+                "attendanceRecords.uid": id,
             })
-            .sort({ date: -1 })
-            .toArray();
+            .sort({ date: -1 });
 
         // Calculate statistics
         let totalPresent = 0;
@@ -99,7 +99,7 @@ const getMyAttendance = async (req, res) => {
         const subjectWiseStats = {};
 
         for (const session of sessions) {
-            const record = session.attendanceRecords.find((r) => r.studentId === id);
+            const record = session.attendanceRecords.find((r) => r.uid === id);
 
             if (record) {
                 if (record.status === "Present") totalPresent++;
@@ -142,9 +142,8 @@ const getMyAttendance = async (req, res) => {
                 id: student.uid,
                 name: student.name,
                 enrollmentNo: student.enrollmentNo,
-                classId: student.classId,
-                section: student.section,
                 branch: student.branch,
+                section: student.section,
             },
             overall: {
                 totalClasses,
@@ -183,7 +182,7 @@ const getSubjectAttendance = async (req, res) => {
         }
 
         // Get student details
-        const student = await db.collection("students").findOne({ uid: id });
+        const student = await Student.findOne({ uid: id });
 
         if (!student) {
             return res.status(404).json({
@@ -192,20 +191,19 @@ const getSubjectAttendance = async (req, res) => {
         }
 
         // Get sessions for this subject
-        const sessions = await db
-            .collection("attendanceSessions")
+        const sessions = await AttendanceSession
             .find({
-                classId: student.classId,
+                branch: student.branch,
                 section: student.section,
                 subjectCode: code,
                 status: "completed",
             })
             .sort({ date: -1 })
-            .toArray();
+            ;
 
         // Extract attendance records
         const attendanceRecords = sessions.map((session) => {
-            const record = session.attendanceRecords.find((r) => r.studentId === id);
+            const record = session.attendanceRecords.find((r) => r.uid === id);
             return {
                 date: session.date,
                 period: session.period,
@@ -269,7 +267,7 @@ const getSemesterReport = async (req, res) => {
         }
 
         // Get student details
-        const student = await db.collection("students").findOne({ uid: id });
+        const student = await Student.findOne({ uid: id });
 
         if (!student) {
             return res.status(404).json({
@@ -278,22 +276,21 @@ const getSemesterReport = async (req, res) => {
         }
 
         // Get sessions for this semester
-        const sessions = await db
-            .collection("attendanceSessions")
+        const sessions = await AttendanceSession
             .find({
-                classId: student.classId,
+                branch: student.branch,
                 section: student.section,
                 semester: semesterNum,
                 status: "completed",
             })
             .sort({ date: -1 })
-            .toArray();
+            ;
 
         // Calculate subject-wise statistics
         const subjectStats = {};
 
         for (const session of sessions) {
-            const record = session.attendanceRecords.find((r) => r.studentId === id);
+            const record = session.attendanceRecords.find((r) => r.uid === id);
             const subKey = session.subjectCode || session.subject || "Other";
 
             if (!subjectStats[subKey]) {
@@ -356,7 +353,7 @@ const getSemesterReport = async (req, res) => {
                 id: student.uid,
                 name: student.name,
                 enrollmentNo: student.enrollmentNo,
-                classId: student.classId,
+                branch: student.branch,
                 section: student.section,
                 branch: student.branch,
             },
@@ -385,18 +382,16 @@ const getSemesterReport = async (req, res) => {
  */
 const getStudentScheduleForDate = async (req, res) => {
     try {
-        const { uid, studentId, date } = req.query;
+        const { uid, date } = req.query;
 
-        const id = uid || studentId;
-
-        if (!id) {
+        if (!uid) {
             return res.status(400).json({
-                error: "uid or studentId is required",
+                error: "uid is required",
             });
         }
 
         // Get student details
-        const student = await db.collection("students").findOne({ uid: id });
+        const student = await Student.findOne({ uid: uid });
 
         if (!student) {
             return res.status(404).json({
@@ -405,29 +400,20 @@ const getStudentScheduleForDate = async (req, res) => {
         }
 
         const scheduleDate = date ? new Date(date) : new Date();
-
-        // Get student's group assignment
-        const groupAssignment = await db.collection("studentGroups").findOne({
-            studentId: id,
-            classId: student.classId,
-        });
-
-        const studentGroup = groupAssignment?.groupNumber || null;
+        const studentGroup = student.groupNumber || null;
 
         // Get all active timetables
-        const timetables = await db
-            .collection("timetables")
+        const timetables = await Timetable
             .find({
-                classId: student.classId,
+                branch: student.branch,
                 section: student.section,
                 isActive: true,
                 validFrom: { $lte: scheduleDate },
                 validUntil: { $gte: scheduleDate },
-            })
-            .toArray();
+            });
 
         const schedule = getStudentSchedule(
-            student.classId,
+            student.branch,
             student.section,
             scheduleDate,
             timetables,
@@ -435,22 +421,20 @@ const getStudentScheduleForDate = async (req, res) => {
         );
 
         // Check which sessions have been conducted
-        const sessionsToday = await db
-            .collection("attendanceSessions")
+        const sessionsToday = await AttendanceSession
             .find({
-                classId: student.classId,
+                branch: student.branch,
                 section: student.section,
                 date: {
                     $gte: new Date(scheduleDate.setHours(0, 0, 0, 0)),
                     $lt: new Date(scheduleDate.setHours(23, 59, 59, 999)),
                 },
-            })
-            .toArray();
+            });
 
         // Enhance schedule with session info
         const enhancedSchedule = schedule.map((period) => {
             const session = sessionsToday.find((s) => s.period === period.period);
-            const myRecord = session?.attendanceRecords.find((r) => r.studentId === id);
+            const myRecord = session?.attendanceRecords.find((r) => r.uid === uid);
 
             return {
                 ...period,
@@ -469,7 +453,7 @@ const getStudentScheduleForDate = async (req, res) => {
                 id: student.uid,
                 name: student.name,
                 enrollmentNo: student.enrollmentNo,
-                classId: student.classId,
+                branch: student.branch,
                 section: student.section,
                 group: studentGroup,
             },

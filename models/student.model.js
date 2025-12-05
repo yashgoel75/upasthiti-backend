@@ -11,5 +11,6 @@ const StudentSchema = new mongoose.Schema({
     semester: { type: Number, required: true },
     batchStart: { type: Number, required: true },
     batchEnd: { type: Number, required: true },
+    groupNumber: { type: Number, default: 1 },
 });
 export const Student = mongoose.model("Student", StudentSchema);
