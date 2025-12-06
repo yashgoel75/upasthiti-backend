@@ -43,7 +43,7 @@ const getFaculty = async (req, res) => {
 
 const getFaculties = async (req, res) => {
   try {
-    const result = await Faculty.find({}).select("facultyId name officialEmail schoolId departmentId type");
+    const result = await Faculty.find({}).select("facultyId name uid officialEmail schoolId departmentId type");
 
     res.json({
       success: true,
