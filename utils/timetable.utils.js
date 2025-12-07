@@ -317,75 +317,75 @@ export const getCurrentPeriod = (timetable, day, currentTime) => {
  * @param {Array} timetables - Array of all timetables
  * @returns {Array} Array of periods where faculty is scheduled
  */
-export const getFacultySchedule = (facultyId, date, timetables) => {
-  const dayName = getDayName(date);
-  const schedule = [];
+// export const getFacultySchedule = (facultyId, date, timetables) => {
+//   const dayName = getDayName(date);
+//   const schedule = [];
 
-  for (const timetable of timetables) {
-    // Check if timetable is valid for the date
-    if (
-      !timetable.isActive ||
-      date < new Date(timetable.validFrom) ||
-      date > new Date(timetable.validUntil)
-    ) {
-      continue;
-    }
+//   for (const timetable of timetables) {
+//     // Check if timetable is valid for the date
+//     if (
+//       !timetable.isActive ||
+//       date < new Date(timetable.validFrom) ||
+//       date > new Date(timetable.validUntil)
+//     ) {
+//       continue;
+//     }
 
-    const daySchedule = timetable.weekSchedule[dayName];
-    if (!daySchedule) continue;
+//     const daySchedule = timetable.weekSchedule[dayName];
+//     if (!daySchedule) continue;
 
-    for (const period of daySchedule) {
-      // Check regular period
-      if (period.facultyId === facultyId) {
-        schedule.push({
-          ...period,
-          timetableInfo: {
-            branch: timetable.branch,
-            section: timetable.section,
-            semester: timetable.semester,
-            classId: timetable.classId,
-          },
-        });
-      }
+//     for (const period of daySchedule) {
+//       // Check regular period
+//       if (period.facultyId === facultyId) {
+//         schedule.push({
+//           ...period,
+//           timetableInfo: {
+//             branch: timetable.branch,
+//             section: timetable.section,
+//             semester: timetable.semester,
+//             classId: timetable.classId,
+//           },
+//         });
+//       }
 
-      // Check group splits
-      if (period.isGroupSplit && period.groups) {
-        if (period.groups.group1?.facultyId === facultyId) {
-          schedule.push({
-            ...period.groups.group1,
-            period: period.period,
-            time: period.time,
-            isGroupSplit: true,
-            groupNumber: 1,
-            timetableInfo: {
-              branch: timetable.branch,
-              section: timetable.section,
-              semester: timetable.semester,
-              classId: timetable.classId,
-            },
-          });
-        }
-        if (period.groups.group2?.facultyId === facultyId) {
-          schedule.push({
-            ...period.groups.group2,
-            period: period.period,
-            time: period.time,
-            isGroupSplit: true,
-            groupNumber: 2,
-            timetableInfo: {
-              branch: timetable.branch,
-              section: timetable.section,
-              semester: timetable.semester,
-              classId: timetable.classId,
-            },
-          });
-        }
-      }
-    }
-  }
+//       // Check group splits
+//       if (period.isGroupSplit && period.groups) {
+//         if (period.groups.group1?.facultyId === facultyId) {
+//           schedule.push({
+//             ...period.groups.group1,
+//             period: period.period,
+//             time: period.time,
+//             isGroupSplit: true,
+//             groupNumber: 1,
+//             timetableInfo: {
+//               branch: timetable.branch,
+//               section: timetable.section,
+//               semester: timetable.semester,
+//               classId: timetable.classId,
+//             },
+//           });
+//         }
+//         if (period.groups.group2?.facultyId === facultyId) {
+//           schedule.push({
+//             ...period.groups.group2,
+//             period: period.period,
+//             time: period.time,
+//             isGroupSplit: true,
+//             groupNumber: 2,
+//             timetableInfo: {
+//               branch: timetable.branch,
+//               section: timetable.section,
+//               semester: timetable.semester,
+//               classId: timetable.classId,
+//             },
+//           });
+//         }
+//       }
+//     }
+//   }
 
-  return schedule.sort((a, b) => a.period - b.period);
-};
+//   return schedule.sort((a, b) => a.period - b.period);
+// };
 
 /**
  * Get student's schedule for a specific date

@@ -7,10 +7,10 @@ await connectDB();
 const getStats = async (req, res) => {
   try {
     // Get all faculty documents
-    const facultyDocs = await Faculty.find({});
+    const facultyDocs = await Faculty.find({}, { __v: 0, _id: 0 }).lean().exec();
 
     // Get all student documents
-    const studentDocs = await Student.find({});
+    const studentDocs = await Student.find({}, { __v: 0, _id: 0 }).lean().exec();
 
     // Segregate faculty by type
     const facultyByType = {

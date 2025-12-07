@@ -1,7 +1,7 @@
 import {
   getDayName,
   getCurrentPeriod,
-  getFacultySchedule,
+  // getFacultySchedule,
   generateSessionId,
   isDateInValidityPeriod,
   resolveGroupAssignment,
@@ -25,11 +25,11 @@ const getFaculty = async (req, res) => {
       });
     }
 
-    const result = await Faculty.find({ uid });
+    const result = await Faculty.findOne({ uid }).select("facultyId name phone branch officialEmail schoolId departmentId type -_id").lean().exec();
 
     res.json({
       success: true,
-      count: result.length,
+      status: 200,
       data: result,
     });
   } catch (error) {
@@ -43,7 +43,7 @@ const getFaculty = async (req, res) => {
 
 const getFaculties = async (req, res) => {
   try {
-    const result = await Faculty.find({}).select("facultyId name uid officialEmail schoolId departmentId type");
+    const result = await Faculty.find({}).select("facultyId name uid officialEmail schoolId departmentId type -_id").lean().exec();
 
     res.json({
       success: true,
@@ -99,7 +99,7 @@ const startAttendanceSession = async (req, res) => {
       isActive: true,
       validFrom: { $lte: sessionDate },
       validUntil: { $gte: sessionDate },
-    });
+    }).lean().exec();
 
     if (!timetable) {
       return res.status(404).json({
@@ -159,7 +159,7 @@ const startAttendanceSession = async (req, res) => {
     const sessionId = generateSessionId(branch, sessionDate, period, groupNumber);
 
     // Check if session already exists
-    const existingSession = await AttendanceSession.findOne({ sessionId });
+    const existingSession = await AttendanceSession.findOne({ sessionId }, { __v: 0, _id: 0 }).lean().exec();
 
     if (existingSession) {
       return res.status(409).json({
@@ -179,10 +179,10 @@ const startAttendanceSession = async (req, res) => {
       studentFilter.groupNumber = groupNumber;
     }
 
-    const students = await Student.find(studentFilter);
+    const students = await Student.find(studentFilter, { __v: 0, _id: 0 }).lean().exec();
 
     // Get teacher name
-    const teacher = await Faculty.findOne({ facultyId: facultyId });
+    const teacher = await Faculty.findOne({ facultyId: facultyId }, { __v: 0, _id: 0 }).lean().exec();
 
     // Create session
     const session = {
@@ -255,7 +255,7 @@ const markAttendance = async (req, res) => {
     }
 
     // Get session
-    const session = await AttendanceSession.findOne({ sessionId });
+    const session = await AttendanceSession.findOne({ sessionId }, { __v: 0, _id: 0 }).lean().exec();
 
     if (!session) {
       return res.status(404).json({
@@ -310,7 +310,7 @@ const markAttendance = async (req, res) => {
       }
 
       // Get student details
-      const student = await Student.findOne({ uid: record.uid });
+      const student = await Student.findOne({ uid: record.uid }, { __v: 0, _id: 0 }).lean().exec();
 
       newRecords.push({
         uid: record.uid,
@@ -366,115 +366,115 @@ const markAttendance = async (req, res) => {
  * Mark bulk attendance (all present or all absent)
  * POST /api/faculty/attendance/mark-bulk
  */
-const markBulkAttendance = async (req, res) => {
-  try {
-    const { sessionId, status, facultyId, uids } = req.body;
+// const markBulkAttendance = async (req, res) => {
+//   try {
+//     const { sessionId, status, facultyId, uids } = req.body;
 
-    if (!sessionId || !status || !facultyId) {
-      return res.status(400).json({
-        error: "Missing required fields: sessionId, status, facultyId",
-      });
-    }
+//     if (!sessionId || !status || !facultyId) {
+//       return res.status(400).json({
+//         error: "Missing required fields: sessionId, status, facultyId",
+//       });
+//     }
 
-    const validStatuses = ["Present", "Absent"];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        error: `Invalid status: ${status}. Must be Present or Absent`,
-      });
-    }
+//     const validStatuses = ["Present", "Absent"];
+//     if (!validStatuses.includes(status)) {
+//       return res.status(400).json({
+//         error: `Invalid status: ${status}. Must be Present or Absent`,
+//       });
+//     }
 
-    // Get session
-    const session = await AttendanceSession.findOne({ sessionId });
+//     // Get session
+//     const session = await AttendanceSession.findOne({ sessionId }, {__v: 0, _id: 0}).lean().exec();
 
-    if (!session) {
-      return res.status(404).json({
-        error: "Session not found",
-      });
-    }
+//     if (!session) {
+//       return res.status(404).json({
+//         error: "Session not found",
+//       });
+//     }
 
-    if (session.status !== "ongoing") {
-      return res.status(400).json({
-        error: "Session is not ongoing",
-      });
-    }
+//     if (session.status !== "ongoing") {
+//       return res.status(400).json({
+//         error: "Session is not ongoing",
+//       });
+//     }
 
-    if (session.facultyId !== facultyId) {
-      return res.status(403).json({
-        error: "You are not authorized to mark attendance for this session",
-      });
-    }
+//     if (session.facultyId !== facultyId) {
+//       return res.status(403).json({
+//         error: "You are not authorized to mark attendance for this session",
+//       });
+//     }
 
-    // Get students to mark (if uids provided, use them; otherwise get all)
-    let studentsToMark;
-    if (uids && uids.length > 0) {
-      studentsToMark = await Student
-        .find({ uid: { $in: uids } });
-    } else {
-      // Get all students for this class
-      const filter = {
-        branch: session.branch,
-        section: session.section,
-      };
+//     // Get students to mark (if uids provided, use them; otherwise get all)
+//     let studentsToMark;
+//     if (uids && uids.length > 0) {
+//       studentsToMark = await Student
+//         .find({ uid: { $in: uids } }, {__v: 0, _id: 0}).lean().exec();
+//     } else {
+//       // Get all students for this class
+//       const filter = {
+//         branch: session.branch,
+//         section: session.section,
+//       };
 
-      // If group split, filter by group
-      if (session.isGroupSplit && session.groupNumber) {
-        filter.groupNumber = session.groupNumber;
-      }
+//       // If group split, filter by group
+//       if (session.isGroupSplit && session.groupNumber) {
+//         filter.groupNumber = session.groupNumber;
+//       }
 
-      studentsToMark = await Student.find(filter);
-    }
+//       studentsToMark = await Student.find(filter, {__v: 0, _id: 0}).lean().exec();
+//     }
 
-    // Filter out already marked students
-    const alreadyMarkedIds = new Set(session.attendanceRecords.map((r) => r.uid));
-    const unmarkedStudents = studentsToMark.filter((s) => !alreadyMarkedIds.has(s.uid));
+//     // Filter out already marked students
+//     const alreadyMarkedIds = new Set(session.attendanceRecords.map((r) => r.uid));
+//     const unmarkedStudents = studentsToMark.filter((s) => !alreadyMarkedIds.has(s.uid));
 
-    // Create records
-    const newRecords = unmarkedStudents.map((student) => ({
-      uid: student.uid,
-      studentName: student.name,
-      enrollmentNo: student.enrollmentNo,
-      status,
-      markedAt: new Date(),
-      markedBy: facultyId,
-    }));
+//     // Create records
+//     const newRecords = unmarkedStudents.map((student) => ({
+//       uid: student.uid,
+//       studentName: student.name,
+//       enrollmentNo: student.enrollmentNo,
+//       status,
+//       markedAt: new Date(),
+//       markedBy: facultyId,
+//     }));
 
-    const updatedRecords = [...session.attendanceRecords, ...newRecords];
+//     const updatedRecords = [...session.attendanceRecords, ...newRecords];
 
-    // Calculate counts
-    const presentCount = updatedRecords.filter((r) => r.status === "Present").length;
-    const absentCount = updatedRecords.filter((r) => r.status === "Absent").length;
+//     // Calculate counts
+//     const presentCount = updatedRecords.filter((r) => r.status === "Present").length;
+//     const absentCount = updatedRecords.filter((r) => r.status === "Absent").length;
 
-    await AttendanceSession.updateOne(
-      { sessionId },
-      {
-        $set: {
-          attendanceRecords: updatedRecords,
-          presentCount,
-          absentCount,
-          updatedAt: new Date(),
-        },
-      }
-    );
+//     await AttendanceSession.updateOne(
+//       { sessionId },
+//       {
+//         $set: {
+//           attendanceRecords: updatedRecords,
+//           presentCount,
+//           absentCount,
+//           updatedAt: new Date(),
+//         },
+//       }
+//     );
 
-    res.json({
-      success: true,
-      message: "Bulk attendance marked successfully",
-      markedCount: newRecords.length,
-      totalMarked: updatedRecords.length,
-      totalStudents: session.totalStudents,
-      statistics: {
-        present: presentCount,
-        absent: absentCount,
-      },
-    });
-  } catch (error) {
-    console.error("[Faculty API] Error marking bulk attendance:", error);
-    res.status(500).json({
-      error: "Internal server error",
-      message: error.message,
-    });
-  }
-};
+//     res.json({
+//       success: true,
+//       message: "Bulk attendance marked successfully",
+//       markedCount: newRecords.length,
+//       totalMarked: updatedRecords.length,
+//       totalStudents: session.totalStudents,
+//       statistics: {
+//         present: presentCount,
+//         absent: absentCount,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("[Faculty API] Error marking bulk attendance:", error);
+//     res.status(500).json({
+//       error: "Internal server error",
+//       message: error.message,
+//     });
+//   }
+// };
 
 /**
  * End an attendance session
@@ -490,7 +490,7 @@ const endAttendanceSession = async (req, res) => {
       });
     }
 
-    const session = await AttendanceSession.findOne({ sessionId });
+    const session = await AttendanceSession.findOne({ sessionId }, { __v: 0, _id: 0 }).lean().exec();
 
     if (!session) {
       return res.status(404).json({
@@ -549,11 +549,11 @@ const endAttendanceSession = async (req, res) => {
  */
 const getSessionHistory = async (req, res) => {
   try {
-    const { facultyId, status, fromDate, toDate, limit = 50 } = req.query;
+    const { facultyId, status, fromDate, toDate, limit = 10 } = req.query;
 
     if (!facultyId) {
       return res.status(400).json({
-        error: "teacherId is required",
+        error: "facultyId is required",
       });
     }
 
@@ -570,9 +570,11 @@ const getSessionHistory = async (req, res) => {
     }
 
     const sessions = await AttendanceSession
-      .find(filter)
+      .find(filter, { __v: 0, _id: 0 })
       .sort({ date: -1, period: -1 })
       .limit(parseInt(limit))
+      .lean()
+      .exec()
       ;
 
     res.json({
@@ -593,55 +595,43 @@ const getSessionHistory = async (req, res) => {
  * Get teacher's schedule for a date
  * GET /api/faculty/schedule
  */
-const getTeacherScheduleForDate = async (req, res) => {
+const getFacultySchedule = async (req, res) => {
   try {
-    const { teacherId, date } = req.query;
+    const { facultyId } = req.query;
 
-    if (!teacherId) {
+    if (!facultyId) {
       return res.status(400).json({
-        error: "teacherId is required",
+        error: "facultyId is required",
       });
     }
 
-    let scheduleDate;
-
-    if (date) {
-      // Try to parse date in multiple formats
-      // Supports: YYYY-MM-DD, YYYY/MM/DD, MM-DD-YYYY, MM/DD/YYYY, ISO 8601
-      scheduleDate = new Date(date);
-
-      // Check if date is invalid
-      if (isNaN(scheduleDate.getTime())) {
-        return res.status(400).json({
-          error: "Invalid date format",
-          hint: "Use formats like: YYYY-MM-DD, YYYY/MM/DD, or ISO 8601 (2025-12-02T00:00:00Z)",
-          received: date
-        });
+    // ✅ OPTIMIZED: Get schedule directly from faculty document (no timetable lookup needed!)
+    const faculty = await Faculty.findOne(
+      { facultyId: facultyId },
+      {
+        schedule: 1,
+        subjects: 1,
+        timetableMeta: 1,
+        name: 1,
+        facultyId: 1,
+        _id: 0
       }
+    ).lean().exec();
 
-      // Set time to start of day to avoid timezone issues
-      scheduleDate.setHours(0, 0, 0, 0);
-    } else {
-      scheduleDate = new Date();
-      scheduleDate.setHours(0, 0, 0, 0);
-    }
-
-    // Get all active timetables
-    const timetables = await Timetable
-      .find({
-        isActive: true,
-        validFrom: { $lte: scheduleDate },
-        validUntil: { $gte: scheduleDate },
+    if (!faculty) {
+      return res.status(404).json({
+        error: "Faculty not found",
       });
-
-    const schedule = getFacultySchedule(teacherId, scheduleDate, timetables);
+    }
 
     res.json({
       success: true,
-      date: scheduleDate.toISOString().split('T')[0], // Return YYYY-MM-DD format
-      dayOfWeek: getDayName(scheduleDate),
-      count: schedule.length,
-      schedule,
+      faculty: {
+        name: faculty.name,
+      },
+      timetableMeta: faculty.timetableMeta,
+      count: faculty.schedule.length,
+      schedule: faculty.schedule.sort((a, b) => a.period - b.period),
     });
   } catch (error) {
     console.error("[Faculty API] Error fetching teacher schedule:", error);
@@ -652,5 +642,106 @@ const getTeacherScheduleForDate = async (req, res) => {
   }
 };
 
+// Get all subjects taught by faculty
+const getFacultySubjects = async (req, res) => {
+  try {
+    const { facultyId } = req.query;
 
-export { getFaculty, getFaculties, startAttendanceSession, markAttendance, markBulkAttendance, endAttendanceSession, getSessionHistory, getTeacherScheduleForDate };
+    if (!facultyId) {
+      return res.status(400).json({
+        error: "facultyId is required",
+      });
+    }
+
+    const faculty = await Faculty.findOne(
+      { facultyId: facultyId },
+      { subjects: 1, name: 1, _id: 0 }
+    ).lean().exec();
+
+    if (!faculty) {
+      return res.status(404).json({
+        error: "Faculty not found",
+      });
+    }
+
+    // Group subjects by semester
+    const subjectsBySemester = {};
+    faculty.subjects.forEach(subject => {
+      if (!subjectsBySemester[subject.semester]) {
+        subjectsBySemester[subject.semester] = [];
+      }
+      subjectsBySemester[subject.semester].push(subject);
+    });
+
+    res.json({
+      success: true,
+      faculty: {
+        name: faculty.name,
+      },
+      subjectsBySemester,
+      totalSubjects: faculty.subjects.length,
+    });
+  } catch (error) {
+    console.error("[Faculty API] Error fetching subjects:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+// Check faculty availability for a specific period
+const checkFacultyAvailability = async (req, res) => {
+  try {
+    const { facultyId, day, period } = req.query;
+
+    if (!facultyId || !day || !period) {
+      return res.status(400).json({
+        error: "facultyId, day, and period are required",
+      });
+    }
+
+    const faculty = await Faculty.findOne(
+      { facultyId },
+      { schedule: 1, _id: 0 }
+    ).lean().exec();
+
+    if (!faculty) {
+      return res.status(404).json({
+        error: "Faculty not found",
+      });
+    }
+
+    // Check for conflict
+    const hasConflict = faculty.schedule.some(
+      entry => entry.day === day.toLowerCase() && entry.period === parseInt(period)
+    );
+
+    res.json({
+      success: true,
+      facultyId,
+      day,
+      period,
+      isAvailable: !hasConflict,
+      message: hasConflict ? "Faculty has a class scheduled" : "Faculty is available"
+    });
+  } catch (error) {
+    console.error("[Faculty API] Error checking availability:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+};
+
+export {
+  getFaculty,
+  getFaculties,
+  startAttendanceSession,
+  markAttendance,
+  endAttendanceSession,
+  getSessionHistory,
+  getFacultySchedule,
+  getFacultySubjects,
+  checkFacultyAvailability,
+};

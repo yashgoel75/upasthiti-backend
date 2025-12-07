@@ -4,17 +4,19 @@ import {
     getFaculty,
     startAttendanceSession,
     markAttendance,
-    markBulkAttendance,
+    // markBulkAttendance,
     endAttendanceSession,
     getSessionHistory,
-    getTeacherScheduleForDate
+    getFacultySchedule,
+    getFacultySubjects,
+    checkFacultyAvailability
 } from "../controllers/faculties.controller.js";
 
 const router = Router();
 
 // Faculty info routes
-router.get("/", getFaculties);
-router.get("/single", getFaculty);
+router.get("/", getFaculty);
+router.get("/all", getFaculties);
 
 // Attendance session routes
 router.post("/attendance/start", startAttendanceSession);
@@ -23,7 +25,9 @@ router.post("/attendance/mark", markAttendance);
 router.post("/attendance/end", endAttendanceSession);
 router.get("/attendance/sessions", getSessionHistory);
 
-// Schedule routes
-router.get("/schedule", getTeacherScheduleForDate);
+// Work profile routes
+router.get("/schedule", getFacultySchedule);
+router.get("/subjects", getFacultySubjects);
+router.get("/availability", checkFacultyAvailability);
 
 export default router;

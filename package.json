@@ -7,6 +7,8 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
@@ -19,5 +21,8 @@
     "firebase-admin": "^13.6.0",
     "mongoose": "^8.19.3",
     "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   }
 }
