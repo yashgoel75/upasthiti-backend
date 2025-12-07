@@ -627,6 +627,7 @@ const getFacultySchedule = async (req, res) => {
     res.json({
       success: true,
       faculty: {
+        facultyId: faculty.facultyId,
         name: faculty.name,
       },
       timetableMeta: faculty.timetableMeta,
@@ -670,7 +671,12 @@ const getFacultySubjects = async (req, res) => {
       if (!subjectsBySemester[subject.semester]) {
         subjectsBySemester[subject.semester] = [];
       }
-      subjectsBySemester[subject.semester].push(subject);
+      const isDuplicate = subjectsBySemester[subject.semester].some(
+        s => s.subjectCode === subject.subjectCode
+      );
+      if (!isDuplicate) {
+        subjectsBySemester[subject.semester].push(subject);
+      }
     });
 
     res.json({
