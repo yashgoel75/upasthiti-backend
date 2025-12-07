@@ -12,13 +12,12 @@ await connectDB();
 
 const getAllStudent = async (req, res) => {
     try {
-        const result = await Student.find({}).select("name uid enrollmentNo phone branch batchEnd");
+        const result = await Student.find({}).select("name uid enrollmentNo phone branch batchEnd -_id").lean().exec();
         res.json({
             success: true,
             count: result.length,
             data: result,
         });
-
     } catch (error) {
         console.error("Student API error:", error);
         res.status(500).json({
@@ -31,15 +30,13 @@ const getAllStudent = async (req, res) => {
 const getStudent = async (req, res) => {
     try {
         const { uid } = req.query;
-        // console.log(uid);
         if (!uid) {
             return res.status(400).json({
                 error: "Missing required query parameter: uid",
             });
         }
 
-        const result = await Student.find({ uid });
-        // console.log(result);
+        const result = await Student.find({ uid }).select("-uid -__v -_id").lean().exec();
         res.json({
             success: true,
             count: result.length,
@@ -56,24 +53,17 @@ const getStudent = async (req, res) => {
 
 // ==================== STUDENT ATTENDANCE VIEWS ====================
 
-/**
- * Get student's overall attendance
- * GET /api/student/attendance/me
- */
 const getMyAttendance = async (req, res) => {
     try {
         const { uid } = req.query;
 
-        const id = uid;
-
-        if (!id) {
+        if (!uid) {
             return res.status(400).json({
-                error: "uid or studentId is required",
+                error: "Student UID is required",
             });
         }
 
-        // Get student details
-        const student = await Student.findOne({ uid: id });
+        const student = await Student.findOne({ uid }).select("-uid -__v -_id").lean().exec();
 
         if (!student) {
             return res.status(404).json({
@@ -81,32 +71,30 @@ const getMyAttendance = async (req, res) => {
             });
         }
 
-        // Get all attendance sessions where student was present
         const sessions = await AttendanceSession
             .find({
                 branch: student.branch,
                 section: student.section,
                 status: "completed",
-                "attendanceRecords.uid": id,
+                "attendanceRecords.uid": uid,
             })
-            .sort({ date: -1 });
+            .select("-__v -_id")
+            .sort({ date: -1 })
+            .lean()
+            .exec();
 
-        // Calculate statistics
         let totalPresent = 0;
         let totalAbsent = 0;
-        let totalLeave = 0;
 
         const subjectWiseStats = {};
 
         for (const session of sessions) {
-            const record = session.attendanceRecords.find((r) => r.uid === id);
+            const record = session.attendanceRecords.find((r) => r.uid === uid);
 
             if (record) {
                 if (record.status === "Present") totalPresent++;
                 else if (record.status === "Absent") totalAbsent++;
-                else if (record.status === "Leave") totalLeave++;
 
-                // Subject-wise stats
                 const subKey = session.subjectCode || session.subject || "Other";
                 if (!subjectWiseStats[subKey]) {
                     subjectWiseStats[subKey] = {
@@ -114,7 +102,6 @@ const getMyAttendance = async (req, res) => {
                         subjectName: session.subjectName || session.subject,
                         present: 0,
                         absent: 0,
-                        leave: 0,
                         total: 0,
                     };
                 }
@@ -122,14 +109,12 @@ const getMyAttendance = async (req, res) => {
                 subjectWiseStats[subKey].total++;
                 if (record.status === "Present") subjectWiseStats[subKey].present++;
                 else if (record.status === "Absent") subjectWiseStats[subKey].absent++;
-                else if (record.status === "Leave") subjectWiseStats[subKey].leave++;
             }
         }
 
-        const totalClasses = totalPresent + totalAbsent + totalLeave;
+        const totalClasses = totalPresent + totalAbsent;
         const overallPercentage = calculateAttendancePercentage(totalPresent, totalClasses);
 
-        // Calculate subject-wise percentages
         const subjects = Object.values(subjectWiseStats).map((subject) => ({
             ...subject,
             percentage: calculateAttendancePercentage(subject.present, subject.total),
@@ -139,17 +124,17 @@ const getMyAttendance = async (req, res) => {
         res.json({
             success: true,
             student: {
-                id: student.uid,
                 name: student.name,
                 enrollmentNo: student.enrollmentNo,
                 branch: student.branch,
                 section: student.section,
+                semester: student.semester,
+                
             },
             overall: {
                 totalClasses,
                 present: totalPresent,
                 absent: totalAbsent,
-                leave: totalLeave,
                 percentage: overallPercentage,
                 hasShortage: overallPercentage < 75,
             },
@@ -164,10 +149,6 @@ const getMyAttendance = async (req, res) => {
     }
 };
 
-/**
- * Get attendance for a specific subject
- * GET /api/student/attendance/subject/:code
- */
 const getSubjectAttendance = async (req, res) => {
     try {
         const { code } = req.params;
@@ -181,8 +162,7 @@ const getSubjectAttendance = async (req, res) => {
             });
         }
 
-        // Get student details
-        const student = await Student.findOne({ uid: id });
+        const student = await Student.findOne({ uid: id }).select("-__v -_id").lean().exec();
 
         if (!student) {
             return res.status(404).json({
@@ -190,7 +170,6 @@ const getSubjectAttendance = async (req, res) => {
             });
         }
 
-        // Get sessions for this subject
         const sessions = await AttendanceSession
             .find({
                 branch: student.branch,
@@ -198,10 +177,11 @@ const getSubjectAttendance = async (req, res) => {
                 subjectCode: code,
                 status: "completed",
             })
+            .select("-__v -_id")
             .sort({ date: -1 })
-            ;
+            .lean()
+            .exec();
 
-        // Extract attendance records
         const attendanceRecords = sessions.map((session) => {
             const record = session.attendanceRecords.find((r) => r.uid === id);
             return {
@@ -216,7 +196,6 @@ const getSubjectAttendance = async (req, res) => {
             };
         });
 
-        // Calculate statistics
         const present = attendanceRecords.filter((r) => r.status === "Present").length;
         const absent = attendanceRecords.filter((r) => r.status === "Absent").length;
         const leave = attendanceRecords.filter((r) => r.status === "Leave").length;
@@ -248,10 +227,6 @@ const getSubjectAttendance = async (req, res) => {
     }
 };
 
-/**
- * Get semester attendance report
- * GET /api/student/attendance/semester/:num
- */
 const getSemesterReport = async (req, res) => {
     try {
         const { num } = req.params;
@@ -266,8 +241,7 @@ const getSemesterReport = async (req, res) => {
             });
         }
 
-        // Get student details
-        const student = await Student.findOne({ uid: id });
+        const student = await Student.findOne({ uid: id }).select("-__v -_id").lean().exec();
 
         if (!student) {
             return res.status(404).json({
@@ -275,7 +249,6 @@ const getSemesterReport = async (req, res) => {
             });
         }
 
-        // Get sessions for this semester
         const sessions = await AttendanceSession
             .find({
                 branch: student.branch,
@@ -283,10 +256,11 @@ const getSemesterReport = async (req, res) => {
                 semester: semesterNum,
                 status: "completed",
             })
+            .select("-__v -_id")
             .sort({ date: -1 })
-            ;
+            .lean()
+            .exec();
 
-        // Calculate subject-wise statistics
         const subjectStats = {};
 
         for (const session of sessions) {
@@ -319,7 +293,6 @@ const getSemesterReport = async (req, res) => {
             }
         }
 
-        // Calculate overall statistics
         let totalPresent = 0;
         let totalAbsent = 0;
         let totalLeave = 0;
@@ -355,7 +328,6 @@ const getSemesterReport = async (req, res) => {
                 enrollmentNo: student.enrollmentNo,
                 branch: student.branch,
                 section: student.section,
-                branch: student.branch,
             },
             overall: {
                 totalClasses,
@@ -376,10 +348,6 @@ const getSemesterReport = async (req, res) => {
     }
 };
 
-/**
- * Get student's schedule for a date
- * GET /api/student/schedule
- */
 const getStudentScheduleForDate = async (req, res) => {
     try {
         const { uid, date } = req.query;
@@ -390,8 +358,7 @@ const getStudentScheduleForDate = async (req, res) => {
             });
         }
 
-        // Get student details
-        const student = await Student.findOne({ uid: uid });
+        const student = await Student.findOne({ uid: uid }).select("-__v -_id").lean().exec();
 
         if (!student) {
             return res.status(404).json({
@@ -402,7 +369,6 @@ const getStudentScheduleForDate = async (req, res) => {
         const scheduleDate = date ? new Date(date) : new Date();
         const studentGroup = student.groupNumber || null;
 
-        // Get all active timetables
         const timetables = await Timetable
             .find({
                 branch: student.branch,
@@ -410,7 +376,10 @@ const getStudentScheduleForDate = async (req, res) => {
                 isActive: true,
                 validFrom: { $lte: scheduleDate },
                 validUntil: { $gte: scheduleDate },
-            });
+            })
+            .select("-__v -_id")
+            .lean()
+            .exec();
 
         const schedule = getStudentSchedule(
             student.branch,
@@ -420,7 +389,6 @@ const getStudentScheduleForDate = async (req, res) => {
             studentGroup
         );
 
-        // Check which sessions have been conducted
         const sessionsToday = await AttendanceSession
             .find({
                 branch: student.branch,
@@ -429,9 +397,11 @@ const getStudentScheduleForDate = async (req, res) => {
                     $gte: new Date(scheduleDate.setHours(0, 0, 0, 0)),
                     $lt: new Date(scheduleDate.setHours(23, 59, 59, 999)),
                 },
-            });
+            })
+            .select("-__v -_id")
+            .lean()
+            .exec();
 
-        // Enhance schedule with session info
         const enhancedSchedule = schedule.map((period) => {
             const session = sessionsToday.find((s) => s.period === period.period);
             const myRecord = session?.attendanceRecords.find((r) => r.uid === uid);
