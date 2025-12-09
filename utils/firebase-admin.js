@@ -1,19 +1,39 @@
-import admin from 'firebase-admin';
+import admin from "firebase-admin";
 
-// Initialize Firebase Admin
+let facultyAdmin;
+let studentAdmin;
+
 if (!admin.apps.length) {
-    // Option 1: Using service account JSON file (recommended for production)
-    try {
-        admin.initializeApp({
-            credential: admin.credential.cert({
-                projectId: process.env.FIREBASE_PROJECT_ID,
-                clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-            })
-        });
-    } catch (error) {
-        console.log("Firebase Admin error:", error)
-    }
+  try {
+    facultyAdmin = admin.initializeApp(
+      {
+        credential: admin.credential.cert({
+          project_id: process.env.FIREBASE_PROJECT_ID_FACULTY,
+          client_email: process.env.FIREBASE_CLIENT_EMAIL_FACULTY,
+          private_key: process.env.FIREBASE_PRIVATE_KEY_FACULTY?.replace(
+            /\\n/g,
+            "\n"
+          ),
+        }),
+      },
+      "faculty"
+    );
+    studentAdmin = admin.initializeApp(
+      {
+        credential: admin.credential.cert({
+          project_id: process.env.FIREBASE_PROJECT_ID_STUDENT,
+          client_email: process.env.FIREBASE_CLIENT_EMAIL_STUDENT,
+          private_key: process.env.FIREBASE_PRIVATE_KEY_STUDENT?.replace(
+            /\\n/g,
+            "\n"
+          ),
+        }),
+      },
+      "student"
+    );
+  } catch (error) {
+    console.log("Firebase Admin error:", error);
+  }
 }
 
-export default admin;
+export { facultyAdmin, studentAdmin };
