@@ -2,7 +2,7 @@ import csv from "csv-parser";
 import { Readable } from "stream";
 import mongoose from "mongoose";
 import connectDB from "../db/index.js";
-import admin from "../utils/firebase-admin.js";
+import { facultyAdmin, studentAdmin } from "../utils/firebase-admin.js";
 import {
   validateTimetableConflicts,
   parseTimetableCSV,
@@ -150,7 +150,7 @@ const addFaculties = async (req, res) => {
         // Create Firebase user
         let firebaseUser;
         try {
-          firebaseUser = await admin.auth().createUser({
+          firebaseUser = await facultyAdmin.auth().createUser({
             email,
             password,
             displayName: name,
@@ -159,7 +159,7 @@ const addFaculties = async (req, res) => {
         } catch (e) {
           if (e.code === "auth/email-already-exists") {
             // If user exists, get the existing user
-            firebaseUser = await admin.auth().getUserByEmail(email);
+            firebaseUser = await facultyAdmin.auth().getUserByEmail(email);
           } else {
             throw e;
           }
@@ -278,7 +278,7 @@ const addStudents = async (req, res) => {
         // Create Firebase user
         let firebaseUser;
         try {
-          firebaseUser = await admin.auth().createUser({
+          firebaseUser = await studentAdmin.auth().createUser({
             email,
             password,
             displayName: name,
@@ -287,7 +287,7 @@ const addStudents = async (req, res) => {
         } catch (firebaseError) {
           if (firebaseError.code === "auth/email-already-exists") {
             // If user exists, get the existing user
-            firebaseUser = await admin.auth().getUserByEmail(email);
+            firebaseUser = await studentAdmin.auth().getUserByEmail(email);
           } else {
             throw firebaseError;
           }
