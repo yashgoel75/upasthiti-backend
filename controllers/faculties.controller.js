@@ -12,6 +12,7 @@ import { Faculty } from "../models/faculty.model.js";
 import { Timetable } from "../models/timetable.model.js";
 import { Student } from "../models/student.model.js";
 import { AttendanceSession } from "../models/attendanceSession.model.js";
+import axios from "axios";
 
 await connectDB();
 
@@ -740,6 +741,45 @@ const checkFacultyAvailability = async (req, res) => {
   }
 };
 
+/**
+ * Send Attendance Alerts via WhatsApp
+ * @param {*} req - get message, phoneNumber
+ * @param {*} res 
+ */
+const sendAttendanceAlerts = async (req, res) => {
+  const phoneNumber = req.body.phoneNumber;
+  const versionNumber = 'v22.0';
+  const phoneNumberId = 925116990665487;
+  const requestConfig = {
+    headers: {
+      'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json'
+    }
+  }
+  const data = { 
+    "messaging_product": "whatsapp", 
+    "to": phoneNumber, 
+    "type": "template", 
+    "template": { 
+      "name": "hello_world", 
+      "language": { "code": "en_US" } 
+    } 
+  }
+  try {
+    const response = await axios.post(`https://graph.facebook.com/${versionNumber}/${phoneNumberId}/messages`, data, requestConfig);
+    res.json({
+      success: true,
+      responseData: response.data
+    });
+  } catch (error) {
+    console.error("[Faculty API] Error sending attendance alerts:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+}
+
 export {
   getFaculty,
   getFaculties,
@@ -750,4 +790,5 @@ export {
   getFacultySchedule,
   getFacultySubjects,
   checkFacultyAvailability,
+  sendAttendanceAlerts
 };

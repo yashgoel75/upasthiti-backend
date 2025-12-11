@@ -9,7 +9,8 @@ import {
     getSessionHistory,
     getFacultySchedule,
     getFacultySubjects,
-    checkFacultyAvailability
+    checkFacultyAvailability,
+    sendAttendanceAlerts
 } from "../controllers/faculties.controller.js";
 
 const router = Router();
@@ -29,5 +30,6 @@ router.get("/attendance/sessions", getSessionHistory);
 router.get("/schedule", getFacultySchedule);
 router.get("/subjects", getFacultySubjects);
 router.get("/availability", checkFacultyAvailability);
+router.post("/attendance/alerts", sendAttendanceAlerts);
 
 export default router;
