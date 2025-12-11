@@ -307,6 +307,7 @@ const addStudents = async (req, res) => {
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
           groupNumber: rec.groupNumber,
+          schoolId: rec.schoolId,
         };
 
         // Insert into MongoDB
@@ -330,6 +331,7 @@ const addStudents = async (req, res) => {
           batchStart: rec.batchStart,
           batchEnd: rec.batchEnd,
           groupNumber: rec.groupNumber,
+          schoolId: rec.schoolId,
         });
       } catch (error) {
         errors.push({
