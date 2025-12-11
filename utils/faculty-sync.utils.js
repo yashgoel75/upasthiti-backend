@@ -6,7 +6,7 @@ import { Subject } from "../models/subject.model.js";
  * Extract faculty schedules from timetable data
  * Returns a map of facultyId -> schedule entries
  */
-export const extractFacultySchedulesFromTimetable = (timetableData) => {
+export const extractFacultySchedulesFromTimetable = async (timetableData) => {
   const facultyScheduleMap = {}; // facultyId -> array of schedule entries
   const facultySubjectsMap = {}; // facultyId -> array of subjects
 
@@ -28,12 +28,16 @@ export const extractFacultySchedulesFromTimetable = (timetableData) => {
           facultySubjectsMap[period.facultyId] = new Map(); // Use Map to track unique subjects
         }
 
+        const subjectKey = `${period.subjectCode}-${timetableData.classId}`;
+        const subjectRecord = await Subject.findOne({ code: period.subjectCode }).lean();
+        const subjectName = subjectRecord?.name || null;
+
         facultyScheduleMap[period.facultyId].push({
           day,
           period: period.period,
           time: period.time,
           subjectCode: period.subjectCode,
-          subjectName: period.subjectName,
+          subjectName: subjectName,
           classId: timetableData.classId,
           branch: timetableData.branch,
           section: timetableData.section,
@@ -46,11 +50,10 @@ export const extractFacultySchedulesFromTimetable = (timetableData) => {
         });
 
         // Track unique subjects (use key: subjectCode to avoid duplicates per class)
-        const subjectKey = `${period.subjectCode}-${timetableData.classId}`;
         if (!facultySubjectsMap[period.facultyId].has(subjectKey)) {
           facultySubjectsMap[period.facultyId].set(subjectKey, {
             subjectCode: period.subjectCode,
-            subjectName: period.subjectName,
+            subjectName: subjectName,
             branch: timetableData.branch,
             section: timetableData.section,
             semester: timetableData.semester,
@@ -77,12 +80,15 @@ export const extractFacultySchedulesFromTimetable = (timetableData) => {
               facultySubjectsMap[group.facultyId] = new Map();
             }
 
+            const subjectKey = `${group.subjectCode}-${timetableData.classId}-G${groupIdx + 1}`;
+            const subjectRecord = await Subject.findOne({ code: group.subjectCode }).lean();
+            const subjectName = subjectRecord?.name || null;
             facultyScheduleMap[group.facultyId].push({
               day,
               period: period.period,
               time: period.time,
               subjectCode: group.subjectCode,
-              subjectName: group.subjectName,
+              subjectName: subjectName,
               classId: timetableData.classId,
               branch: timetableData.branch,
               section: timetableData.section,
@@ -94,11 +100,10 @@ export const extractFacultySchedulesFromTimetable = (timetableData) => {
               timetableId: null
             });
 
-            const subjectKey = `${group.subjectCode}-${timetableData.classId}-G${groupIdx + 1}`;
             if (!facultySubjectsMap[group.facultyId].has(subjectKey)) {
               facultySubjectsMap[group.facultyId].set(subjectKey, {
                 subjectCode: group.subjectCode,
-                subjectName: group.subjectName,
+                subjectName: subjectName,
                 branch: timetableData.branch,
                 section: timetableData.section,
                 semester: timetableData.semester,
@@ -134,7 +139,7 @@ export const extractFacultySchedulesFromTimetable = (timetableData) => {
  */
 export const syncFacultySchedulesWithTimetable = async (timetableId, timetableData) => {
   try {
-    const { scheduleMap, subjectsMap } = extractFacultySchedulesFromTimetable(timetableData);
+    const { scheduleMap, subjectsMap } = await extractFacultySchedulesFromTimetable(timetableData);
 
     // Array to store bulk write operations
     const bulkOps = [];
