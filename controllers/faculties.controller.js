@@ -748,7 +748,16 @@ const checkFacultyAvailability = async (req, res) => {
  */
 const sendAttendanceAlerts = async (req, res) => {
   const phoneNumber = req.body.phoneNumber;
-  const versionNumber = 'v22.0';
+  const student_name = req.body.student_name;
+  const parent_name = req.body.parent_name;
+  const enrollmentNo = req.body.enrollmentNo;
+
+  if (!phoneNumber || !student_name || !parent_name || !enrollmentNo) {
+    return res.status(400).json({
+      error: "Missing required fields: phoneNumber, student_name, parent_name, enrollmentNo",
+    });
+  }
+  const versionNumber = 'v24.0';
   const phoneNumberId = 925116990665487;
   const requestConfig = {
     headers: {
@@ -756,14 +765,40 @@ const sendAttendanceAlerts = async (req, res) => {
       'Content-Type': 'application/json'
     }
   }
-  const data = { 
-    "messaging_product": "whatsapp", 
-    "to": phoneNumber, 
-    "type": "template", 
-    "template": { 
-      "name": "hello_world", 
-      "language": { "code": "en_US" } 
-    } 
+  const data = {
+    "messaging_product": "whatsapp",
+    "recipient_type": "individual",
+    "to": phoneNumber,
+    "type": "template",
+    "template": {
+      "name": "attendance_notification",
+      "language": { "code": "en" },
+      "components": [
+        {
+          "type": "body",
+          "parameters": [
+            {
+              "type": "text",
+              "parameter_name": "parent_name",
+              "text": parent_name
+            },
+            {
+              "type": "text",
+              "parameter_name": "student_name",
+              "text": student_name
+            },
+          ]
+        },
+        {
+          type: "button",
+          sub_type: "url",
+          index: "0",
+          parameters: [
+            { type: "text", text: enrollmentNo }
+          ]
+        }
+      ]
+    }
   }
   try {
     const response = await axios.post(`https://graph.facebook.com/${versionNumber}/${phoneNumberId}/messages`, data, requestConfig);
@@ -773,6 +808,7 @@ const sendAttendanceAlerts = async (req, res) => {
     });
   } catch (error) {
     console.error("[Faculty API] Error sending attendance alerts:", error);
+    console.error("Response data:", error.response?.data);
     res.status(500).json({
       error: "Internal server error",
       message: error.message,
