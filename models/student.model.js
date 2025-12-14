@@ -11,6 +11,20 @@ const StudentSchema = new mongoose.Schema({
     semester: { type: Number, required: true },
     batchStart: { type: Number, required: true },
     batchEnd: { type: Number, required: true },
+    parents: {
+        parent1: {
+            name: { type: String, required: true },
+            relation: { type: String, required: true },
+            phone: { type: Number, required: true },
+            email: { type: String, required: true },
+        },
+        parent2: {
+            name: { type: String },
+            relation: { type: String },
+            phone: { type: Number },
+            email: { type: String },
+        },
+    },
     groupNumber: { type: Number, default: 1 },
     schoolId: { type: String, required: true },
 });
