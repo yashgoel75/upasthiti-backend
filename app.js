@@ -10,6 +10,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://upasthiti-admin-frontend.vercel.app",
   "https://upasthiti-student-frontend.vercel.app",
+  "https://upasthiti-faculty-frontend.vercel.app"
 ];
 
 app.use(
