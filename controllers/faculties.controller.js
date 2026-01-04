@@ -234,7 +234,15 @@ const startAttendanceSession = async (req, res) => {
         error: "Session already exists",
         message: "This session was already started. Please use the existing session.",
         sessionId,
-        session: result,
+        session: {
+          ...sessionData,
+          _id: result.insertedId,
+          studentList: students.map((s) => ({
+            uid: s.uid,
+            name: s.name,
+            enrollmentNo: s.enrollmentNo,
+          })),
+        },
       });
     }
 
@@ -243,7 +251,7 @@ const startAttendanceSession = async (req, res) => {
       message: "Attendance session started",
       sessionId,
       session: {
-        ...session,
+        ...sessionData,
         _id: result.insertedId,
         studentList: students.map((s) => ({
           uid: s.uid,
