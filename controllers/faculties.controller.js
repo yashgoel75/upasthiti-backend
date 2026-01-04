@@ -186,7 +186,7 @@ const startAttendanceSession = async (req, res) => {
     const teacher = await Faculty.findOne({ facultyId: facultyId }, { __v: 0, _id: 0 }).lean().exec();
 
     // Create session
-    const session = {
+    const sessionData = {
       sessionId,
       date: sessionDate,
       dayOfWeek,
@@ -215,7 +215,28 @@ const startAttendanceSession = async (req, res) => {
       updatedAt: new Date(),
     };
 
-    const result = await AttendanceSession.insertOne(session);
+    const result = await AttendanceSession.findOneAndUpdate(
+      { sessionId }, // Filter: Check if session with this ID already exists
+      sessionData,   // Update/Insert data
+      {
+        upsert: true, // Create if doesn't exist
+        new: true,    // Return the created/existing document
+        lean: true    // Return plain object, not mongoose document
+      }
+    );
+
+    // Check if this was an existing session (document was already there)
+    const isNewSession = result.createdAt?.getTime() === sessionData.createdAt.getTime();
+
+    if (!isNewSession) {
+      // Session already exists, return 409 Conflict
+      return res.status(409).json({
+        error: "Session already exists",
+        message: "This session was already started. Please use the existing session.",
+        sessionId,
+        session: result,
+      });
+    }
 
     res.status(201).json({
       success: true,
