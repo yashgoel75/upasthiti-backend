@@ -159,16 +159,6 @@ const startAttendanceSession = async (req, res) => {
     // Generate session ID
     const sessionId = generateSessionId(branch, sessionDate, period, groupNumber);
 
-    // Check if session already exists
-    const existingSession = await AttendanceSession.findOne({ sessionId }, { __v: 0, _id: 0 }).lean().exec();
-
-    if (existingSession) {
-      return res.status(409).json({
-        error: "Session already exists",
-        session: existingSession,
-      });
-    }
-
     // Get students for this class
     const studentFilter = {
       branch,
@@ -230,13 +220,13 @@ const startAttendanceSession = async (req, res) => {
 
     if (!isNewSession) {
       // Session already exists, return 409 Conflict
-      return res.status(409).json({
-        error: "Session already exists",
+      return res.status(250).json({
+        error: "Session already exist.",
         message: "This session was already started. Please use the existing session.",
         sessionId,
         session: {
           ...sessionData,
-          _id: result.insertedId,
+          _id: result._id,
           studentList: students.map((s) => ({
             uid: s.uid,
             name: s.name,
