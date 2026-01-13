@@ -26,7 +26,7 @@ const getFaculty = async (req, res) => {
       });
     }
 
-    const result = await Faculty.findOne({ uid }).select("facultyId name phone branch officialEmail schoolId departmentId type -_id").lean().exec();
+    const result = await Faculty.findOne({ uid }).select("facultyId name phone branch officialEmail schoolId departmentId type roles -_id").lean().exec();
 
     res.json({
       success: true,
@@ -44,7 +44,7 @@ const getFaculty = async (req, res) => {
 
 const getFaculties = async (req, res) => {
   try {
-    const result = await Faculty.find({}).select("facultyId name uid officialEmail schoolId departmentId type -_id").lean().exec();
+    const result = await Faculty.find({}).select("facultyId name uid officialEmail schoolId departmentId type roles -_id").lean().exec();
 
     res.json({
       success: true,

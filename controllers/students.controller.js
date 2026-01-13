@@ -12,7 +12,7 @@ await connectDB();
 
 const getAllStudent = async (req, res) => {
     try {
-        const result = await Student.find({}).select("name uid enrollmentNo phone branch batchEnd -_id").lean().exec();
+        const result = await Student.find({}).select("name uid enrollmentNo phone branch batchEnd roles -_id").lean().exec();
         res.json({
             success: true,
             count: result.length,
